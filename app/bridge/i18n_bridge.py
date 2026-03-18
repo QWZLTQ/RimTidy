@@ -1,0 +1,470 @@
+"""
+Internationalization bridge for QML.
+Provides translated strings for the QML UI.
+"""
+
+from PySide6.QtCore import Property, QObject, Signal, Slot
+
+# Chinese translations for all QML UI strings
+_ZH_CN: dict[str, str] = {
+    # Title bar
+    "RimTidy": "RimTidy",
+
+    # Menu bar
+    "File": "文件",
+    "Edit": "编辑",
+    "View": "视图",
+    "Download": "下载",
+    "Instances": "实例",
+    "Textures": "纹理",
+    "Update": "更新",
+    "Help": "帮助",
+
+    # File menu
+    "Open Mod List...": "打开 Mod 列表...",
+    "Save Mod List As...": "另存 Mod 列表...",
+    "Import": "导入",
+    "Export": "导出",
+    "From Rentry.co": "从 Rentry.co",
+    "From Workshop Collection": "从创意工坊合集",
+    "From Save File...": "从存档文件...",
+    "To Clipboard...": "到剪贴板...",
+    "To Rentry.co...": "到 Rentry.co...",
+    "Settings...": "设置...",
+    "Exit": "退出",
+
+    # Edit menu
+    "Cut": "剪切",
+    "Copy": "复制",
+    "Paste": "粘贴",
+    "Rule Editor...": "规则编辑器...",
+    "Ignore JSON Editor...": "忽略列表编辑器...",
+    "Reset Warning Toggles": "重置警告开关",
+    "Reset Mod Colors": "重置 Mod 颜色",
+
+    # View menu
+    "Show Translation Status": "显示翻译状态",
+    "Dark Mode": "深色模式",
+    "Light Mode": "浅色模式",
+
+    # Download menu
+    "Add Git Mod": "添加 Git Mod",
+    "Add Zip Mod": "添加 Zip Mod",
+    "Browse Workshop": "浏览创意工坊",
+    "Update Workshop Mods": "更新创意工坊 Mod",
+    "Verify Game Files": "验证游戏文件",
+
+    # Instances menu
+    "Backup Instance...": "备份实例...",
+    "Restore Instance...": "恢复实例...",
+    "Clone Instance...": "克隆实例...",
+    "Create Instance...": "创建实例...",
+    "Delete Instance...": "删除实例...",
+
+    # Textures menu
+    "Optimize Textures": "优化纹理",
+    "Delete .dds Textures": "删除 .dds 纹理",
+
+    # Update menu
+    "Check for Updates...": "检查更新...",
+
+    # Help menu
+    "RimTidy Wiki...": "RimTidy 文档...",
+    "RimTidy GitHub...": "RimTidy GitHub...",
+
+    # Tab bar
+    "Main Content": "主界面",
+    "ACF Log Reader": "ACF 日志读取",
+    "Player Log": "玩家日志",
+    "File Search": "文件搜索",
+    "Troubleshooting": "故障排除",
+
+    # Mod lists
+    "Active Mods": "已激活 Mod",
+    "Inactive Mods": "未激活 Mod",
+    "No mods": "无 Mod",
+    "Search active...": "搜索已激活...",
+    "Search inactive...": "搜索未激活...",
+
+    # Sort options
+    "Name (A-Z)": "名称 (A-Z)",
+    "Name (Z-A)": "名称 (Z-A)",
+    "Author": "作者",
+    "Package ID": "包 ID",
+
+    # Source filter
+    "All": "全部",
+    "Local": "本地",
+    "Steam": "Steam",
+    "DLC": "DLC",
+
+    # Buttons
+    "Refresh": "刷新",
+    "Clear": "清空",
+    "Restore": "还原",
+    "Sort": "排序",
+    "Save": "保存",
+    "Run": "运行",
+
+    # Mod info panel
+    "No Preview": "无预览图",
+    "Name": "名称",
+    "PackageID": "包 ID",
+    "Authors": "作者",
+    "Version": "版本",
+    "Supported": "支持版本",
+    "Size": "大小",
+    "Path": "路径",
+    "Last Touched": "最后访问",
+    "Modified": "修改时间",
+    "Workshop": "创意工坊",
+    "Summary": "摘要",
+    "Personal notes...": "个人备注...",
+
+    # Context menu
+    "Open folder": "打开文件夹",
+    "Open folder in text editor": "在文本编辑器中打开",
+    "Change mod color": "更改 Mod 颜色",
+    "Reset mod color": "重置 Mod 颜色",
+    "Open URL in browser": "在浏览器中打开链接",
+    "Open mod in Steam": "在 Steam 中打开",
+    "Toggle warning suppression": "切换警告屏蔽",
+    "Clipboard": "剪贴板",
+    "Copy Package ID": "复制包 ID",
+    "Copy URL": "复制链接",
+    "Miscellaneous": "其他",
+    "Edit mod rules": "编辑 Mod 规则",
+    "Workshop options": "创意工坊选项",
+    "Re-download with git": "通过 Git 重新下载",
+    "Re-download with SteamCMD": "通过 SteamCMD 重新下载",
+    "Re-subscribe with Steam": "通过 Steam 重新订阅",
+    "Unsubscribe with Steam": "通过 Steam 取消订阅",
+    "Activate mod": "激活 Mod",
+    "Deactivate mod": "停用 Mod",
+    "Delete mod": "删除 Mod",
+
+    # Folder management (inactive mod list)
+    "Rename": "重命名",
+    "Delete folder": "删除文件夹",
+    "Move to folder": "移至文件夹",
+    "(No folder)": "(无文件夹)",
+
+    # Settings
+    "Settings": "设置",
+    "Locations": "路径",
+    "Game Launch": "游戏启动",
+    "Databases": "数据库",
+    "Sorting": "排序",
+    "DB Builder": "数据库构建",
+    "SteamCMD": "SteamCMD",
+    "todds": "todds",
+    "External Tools": "外部工具",
+    "Theme": "主题",
+    "Launch State": "启动状态",
+    "Authentication": "身份验证",
+    "Advanced": "高级",
+    "OK": "确定",
+    "Cancel": "取消",
+    "Reset to Defaults": "恢复默认",
+    "Autodetect": "自动检测",
+    "Clear All": "全部清除",
+
+    # Settings - Locations
+    "Game Location": "游戏路径",
+    "Config Folder": "配置文件夹",
+    "Steam Mods Folder": "Steam Mod 文件夹",
+    "Leave empty to use default location": "留空使用默认路径",
+
+    # Settings - Game Launch
+    "Launch Method": "启动方式",
+    "Use Steam protocol for launching": "使用 Steam 协议启动",
+    "Use Steamworks integration for launching": "使用 Steamworks 集成启动",
+    "Custom Game Arguments": "自定义游戏参数",
+    "Additional launch arguments...": "额外启动参数...",
+    "Game Executable": "游戏可执行文件",
+    "Override the default game executable path if needed.": "如有需要，可覆盖默认游戏可执行文件路径。",
+    "Leave empty to use default": "留空使用默认值",
+
+    # Settings - Databases
+    "Community Rules Database": "社区规则数据库",
+    "URL or local path to the community rules database used for sorting.": "用于排序的社区规则数据库 URL 或本地路径。",
+    "Community rules database path or URL...": "社区规则数据库路径或 URL...",
+    "Steam Workshop Database": "Steam 创意工坊数据库",
+    "URL or local path to the Steam Workshop database.": "Steam 创意工坊数据库 URL 或本地路径。",
+    "Steam Workshop database path or URL...": "Steam 创意工坊数据库路径或 URL...",
+    "No Version Warning Database": "无版本警告数据库",
+    "Path or URL...": "路径或 URL...",
+    "Use This Instead Database": "替代 Mod 数据库",
+
+    # Settings - DB Builder
+    "Database Builder": "数据库构建器",
+    "Configure how the mod database is built from Steam Workshop data.": "配置如何从 Steam 创意工坊数据构建 Mod 数据库。",
+    "Enable database building on refresh": "刷新时启用数据库构建",
+    "Include mod dependencies in database": "在数据库中包含 Mod 依赖",
+    "Build Options": "构建选项",
+    "Number of concurrent API queries for database building.": "数据库构建的并发 API 查询数。",
+    "Concurrent queries:": "并发查询数：",
+
+    # Settings - SteamCMD
+    "SteamCMD Installation": "SteamCMD 安装",
+    "Path to your SteamCMD installation. Required for downloading mods without Steam client.": "SteamCMD 安装路径。无 Steam 客户端时下载 Mod 需要此项。",
+    "SteamCMD installation path...": "SteamCMD 安装路径...",
+    "Install SteamCMD": "安装 SteamCMD",
+    "Download Settings": "下载设置",
+    "Validate downloads after completion": "下载完成后验证",
+    "Force re-download existing mods": "强制重新下载已有 Mod",
+
+    # Settings - todds
+    "todds Texture Optimizer": "todds 纹理优化器",
+    "todds optimizes mod textures to DDS format for better game performance.": "todds 将 Mod 纹理优化为 DDS 格式以提升游戏性能。",
+    "todds executable path...": "todds 可执行文件路径...",
+    "Optimization Settings": "优化设置",
+    "Overwrite existing DDS files": "覆盖已有 DDS 文件",
+    "Delete original textures after conversion": "转换后删除原始纹理",
+    "Texture quality:": "纹理质量：",
+
+    # Settings - External Tools
+    "Text Editor": "文本编辑器",
+    "Path to your preferred text editor for opening log files.": "用于打开日志文件的首选文本编辑器路径。",
+    "Text editor executable path...": "文本编辑器可执行文件路径...",
+    "Git": "Git",
+    "Path to git executable (for git-based mod management).": "Git 可执行文件路径（用于基于 Git 的 Mod 管理）。",
+    "git executable path...": "Git 可执行文件路径...",
+
+    # Settings - Launch State
+    "Main Window": "主窗口",
+    "Normal (centered)": "正常（居中）",
+    "Maximized": "最大化",
+    "Custom size": "自定义大小",
+    "Width:": "宽度：",
+    "Height:": "高度：",
+    "Browser Window": "浏览器窗口",
+    "Normal": "正常",
+
+    # Settings - Authentication
+    "GitHub Authentication": "GitHub 身份验证",
+    "A GitHub personal access token increases API rate limits for database operations.": "GitHub 个人访问令牌可提高数据库操作的 API 速率限制。",
+    "GitHub personal access token...": "GitHub 个人访问令牌...",
+    "Steam Web API": "Steam Web API",
+    "Steam Web API key for accessing Workshop data. Get one at steamcommunity.com/dev/apikey": "访问创意工坊数据的 Steam Web API 密钥。在 steamcommunity.com/dev/apikey 获取",
+    "Steam Web API key...": "Steam Web API 密钥...",
+
+    # Settings - Advanced
+    "Debug": "调试",
+    "Enable debug logging": "启用调试日志",
+    "Show warnings for version mismatches": "显示版本不匹配警告",
+    "Mod List Behavior": "Mod 列表行为",
+    "Constrain dialogues to main window monitor": "将对话框限制在主窗口显示器",
+    "Auto-update community databases on refresh": "刷新时自动更新社区数据库",
+    "File Watcher": "文件监控",
+    "Enable file system watcher for mod changes": "启用文件系统监控以检测 Mod 变更",
+    "Automatically refreshes mod lists when files are added or removed.": "当文件添加或移除时自动刷新 Mod 列表。",
+    "Reset All Settings": "重置所有设置",
+
+    # Tabs content
+    "Reload": "重新加载",
+    "Upload Log": "上传日志",
+    "Search log...": "搜索日志...",
+    "Player log will appear here.\nConfigure game paths in Settings to load the log file.": "玩家日志将在此显示。\n请在设置中配置游戏路径以加载日志文件。",
+    "Errors: 0": "错误: 0",
+    "Warnings: 0": "警告: 0",
+    "Lines: 0": "行数: 0",
+    "Search for files across mods...": "在所有 Mod 目录中搜索文件...",
+    "Search": "搜索",
+    "File Name": "文件名",
+    "Mod": "Mod",
+    "0 results": "0 个结果",
+    "Enter a search term to find files across all mod directories.": "输入搜索词以在所有 Mod 目录中查找文件。",
+    "Filter ACF entries...": "过滤 ACF 条目...",
+    "ACF Log Reader": "ACF 日志读取",
+    "Mod Name": "Mod 名称",
+    "Workshop ID": "创意工坊 ID",
+    "State": "状态",
+    "Last Updated": "最后更新",
+    "No ACF data loaded.\nConfigure paths in Settings to load ACF metadata.": "未加载 ACF 数据。\n请在设置中配置路径以加载 ACF 元数据。",
+    "Clear Mod Cache": "清除 Mod 缓存",
+    "Remove cached mod metadata and rescan": "移除缓存的 Mod 元数据并重新扫描",
+    "Reset Load Order": "重置加载顺序",
+    "Reset to default RimWorld load order": "重置为默认 RimWorld 加载顺序",
+    "Verify All Mod Files": "验证所有 Mod 文件",
+    "Check all mod files for corruption": "检查所有 Mod 文件是否损坏",
+    "Check for Circular Dependencies": "检查循环依赖",
+    "Find dependency loops that prevent sorting": "查找阻止排序的依赖循环",
+    "Find Incompatible Mods": "查找不兼容 Mod",
+    "Detect mods marked as incompatible": "检测标记为不兼容的 Mod",
+    "Check for Missing Textures": "检查缺失纹理",
+    "Find mods with broken texture references": "查找纹理引用损坏的 Mod",
+    "Clear RimTidy Logs": "清除 RimTidy 日志",
+    "Delete old RimTidy log files": "删除旧的 RimTidy 日志文件",
+    "Clear Steam Download Cache": "清除 Steam 下载缓存",
+    "Remove cached Steam downloads": "移除已缓存的 Steam 下载",
+
+    # Dialogs
+    "Filter rules...": "过滤规则...",
+    "Rule Type": "规则类型",
+    "Category": "类别",
+    "Comment": "备注",
+    "Mod Rule ": "Mod 规则 ",
+    "loadAfter": "加载之后",
+    "Add Rule": "添加规则",
+    "Delete Selected": "删除选中",
+    "Waiting for process output...": "等待进程输出...",
+    "Stop": "停止",
+    "Close": "关闭",
+    "The following mods are missing from your active mod list. Select variants to download.": "以下 Mod 不在您的激活列表中。请选择要下载的版本。",
+    "Available Variants": "可用版本",
+    "No missing mods": "无缺失 Mod",
+    "Download via SteamCMD": "通过 SteamCMD 下载",
+    "Subscribe via Steam": "通过 Steam 订阅",
+    "Some mods have missing dependencies. Select which to add to your active mod list.": "部分 Mod 存在缺失依赖。请选择要添加到激活列表的项目。",
+    "Dependency mod ": "依赖 Mod ",
+    "No missing dependencies": "无缺失依赖",
+    "Select All": "全选",
+    "Sort Without Adding": "不添加直接排序",
+    "Add Selected": "添加选中",
+    "The following mods have recommended replacements. Consider switching to the suggested alternatives.": "以下 Mod 有推荐替代品。建议切换到推荐的替代 Mod。",
+    "Current Mod": "当前 Mod",
+    "Recommended Replacement": "推荐替代",
+    "No replacements available": "无可用替代",
+    "The following mods have duplicate installations. Select which versions to keep.": "以下 Mod 存在重复安装。请选择要保留的版本。",
+    "Source": "来源",
+    "No duplicates found": "未发现重复",
+    "Mods in this list will have their warnings/errors suppressed.": "此列表中的 Mod 的警告/错误将被屏蔽。",
+    "Ignored Mod ": "已忽略 Mod ",
+    "Ignore list is empty": "忽略列表为空",
+    "Remove Selected": "移除选中",
+    "The following Workshop mods have available updates.": "以下创意工坊 Mod 有可用更新。",
+    "Current": "当前版本",
+    "Available": "可用版本",
+    "All mods are up to date": "所有 Mod 均为最新",
+    "Update via SteamCMD": "通过 SteamCMD 更新",
+    "Update via Steam": "通过 Steam 更新",
+    "The following mods are missing a Package ID or Steam Workshop ID.": "以下 Mod 缺少包 ID 或 Steam 创意工坊 ID。",
+    "Missing Property": "缺失属性",
+    "No issues found": "未发现问题",
+    "Add to Ignore List": "添加到忽略列表",
+
+    # Dialog titles
+    "Duplicate Mods": "重复 Mod",
+    "Missing Mods": "缺失 Mod",
+    "Ignore List Editor": "忽略列表编辑器",
+    "Missing Mod Properties": "缺失 Mod 属性",
+    "Workshop Mod Updates": "创意工坊 Mod 更新",
+    "Runner": "运行器",
+    "Recommended Replacements": "推荐替代",
+    "Missing Dependencies": "缺失依赖",
+    "Rule Editor": "规则编辑器",
+
+    # Troubleshooting descriptions
+    "Common fixes for mod-related issues.": "常见 Mod 问题修复。",
+    "Identify potential issues with your mod setup.": "识别 Mod 设置中的潜在问题。",
+    "Remove unnecessary files and data.": "移除不必要的文件和数据。",
+
+    # RuleEditor extras
+    "All Rules": "所有规则",
+    "User Rules": "用户规则",
+    "Community Rules": "社区规则",
+    "User": "用户",
+    "Community": "社区",
+
+    # ComboBox items
+    "Low": "低",
+    "Medium": "中",
+    "High": "高",
+    "Ultra": "极高",
+    "All Files": "所有文件",
+
+    # Open shortcuts
+    "Open...": "打开...",
+    "Root Directory": "根目录",
+    "Config Directory": "配置目录",
+    "Logs Directory": "日志目录",
+    "Local Mods Directory": "本地 Mod 目录",
+    "Steam Mods Directory": "Steam Mod 目录",
+
+    # Virtual folders
+    "New Folder": "新建文件夹",
+    "Rename Folder": "重命名文件夹",
+    "Delete Folder": "删除文件夹",
+    "Move to Folder": "移动到文件夹",
+    "Remove from Folder": "从文件夹移除",
+    "Local Mods Folder": "本地 Mod 文件夹",
+    "Instance Folder (optional)": "实例文件夹（可选）",
+    "Enable Steam client integration": "启用 Steam 客户端集成",
+
+    # Settings - Sorting
+    "Sort Algorithm": "排序算法",
+    "Topological Sort (recommended)": "拓扑排序（推荐）",
+    "Alphabetical Sort": "字母排序",
+    "Sorting Behavior": "排序行为",
+    "Treat About.xml dependencies as load order rules": "将 About.xml 依赖视为加载顺序规则",
+    "Use alternative package IDs as satisfying dependencies": "使用替代包 ID 满足依赖",
+    "Display Options": "显示选项",
+    "Show mod type filter (C# / XML)": "显示 Mod 类型过滤器 (C# / XML)",
+    "Show save comparison indicators": "显示存档比较指示器",
+    "Enable inactive mods list sorting": "启用未激活 Mod 列表排序",
+
+    # Settings - Theme
+    "Appearance": "外观",
+    "Enable themes": "启用主题",
+    "Color Mode": "颜色模式",
+    "Light": "浅色",
+    "Dark": "深色",
+    "Font": "字体",
+    "Font size:": "字体大小：",
+    "Mod List Colors": "Mod 列表颜色",
+    "Color mod background instead of text": "为 Mod 背景着色而非文字",
+
+    # Error/Warning
+    "warning(s)": "个警告",
+    "error(s)": "个错误",
+
+    # Status bar
+    "Ready": "就绪",
+
+    # Troubleshooting
+    "Quick Actions": "快速操作",
+    "Common fixes for mod-related issues.": "常见 Mod 问题修复。",
+    "Clear Mod Cache": "清除 Mod 缓存",
+    "Remove cached mod metadata and rescan": "移除缓存的 Mod 元数据并重新扫描",
+    "Reset Load Order": "重置加载顺序",
+    "Reset to default RimWorld load order": "重置为默认 RimWorld 加载顺序",
+    "Verify All Mod Files": "验证所有 Mod 文件",
+    "Check all mod files for corruption": "检查所有 Mod 文件是否损坏",
+    "Diagnostics": "诊断",
+    "Identify potential issues with your mod setup.": "识别 Mod 设置中的潜在问题。",
+    "Check for Circular Dependencies": "检查循环依赖",
+    "Find dependency loops that prevent sorting": "查找阻止排序的依赖循环",
+    "Find Incompatible Mods": "查找不兼容 Mod",
+    "Detect mods marked as incompatible": "检测标记为不兼容的 Mod",
+    "Cleanup": "清理",
+    "Remove unnecessary files and data.": "移除不必要的文件和数据。",
+    "Danger Zone": "危险区域",
+}
+
+
+class I18nBridge(QObject):
+    """Translation bridge for QML."""
+
+    languageChanged = Signal()
+
+    def __init__(self, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._lang = "zh_CN"  # Default to Chinese
+        self._translations = _ZH_CN
+
+    @Property(str, notify=languageChanged)
+    def language(self) -> str:
+        return self._lang
+
+    @language.setter  # type: ignore[no-redef]
+    def language(self, val: str) -> None:
+        self._lang = val
+        self.languageChanged.emit()
+
+    @Slot(str, result=str)
+    def t(self, key: str) -> str:
+        """Translate a string. Returns the key itself if no translation found."""
+        if self._lang == "en_US":
+            return key
+        return self._translations.get(key, key)
