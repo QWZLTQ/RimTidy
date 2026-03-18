@@ -534,6 +534,31 @@ ApplicationWindow {
                                         flickDeceleration: 3000; maximumFlickVelocity: 2500
                                         interactive: !_dragging
                                         focus: true; keyNavigationEnabled: true
+                                        MouseArea {
+                                            anchors.fill: parent; enabled: _dragging; z: 100
+                                            hoverEnabled: true
+                                            acceptedButtons: Qt.LeftButton
+                                            onPositionChanged: function(mouse) {
+                                                if (_dragging) {
+                                                    var gp = mapToGlobal(mouse.x, mouse.y)
+                                                    _dragPos = root.contentItem.mapFromGlobal(gp.x, gp.y)
+                                                }
+                                            }
+                                            onReleased: function(mouse) {
+                                                if (_dragging) {
+                                                    var gp = mapToGlobal(mouse.x, mouse.y)
+                                                    if (_dragFolderId !== "") {
+                                                        root._finishFolderDrag(gp)
+                                                    } else {
+                                                        root._finishDrag(gp, inactiveCard)
+                                                    }
+                                                }
+                                            }
+                                            onWheel: function(wheel) {
+                                                var step = wheel.angleDelta.y > 0 ? -90 : 90
+                                                inactiveLv.contentY = Math.max(0, Math.min(inactiveLv.contentY + step, inactiveLv.contentHeight - inactiveLv.height))
+                                            }
+                                        }
 
                                         Keys.onReturnPressed: {
                                             if (currentIndex >= 0) {
@@ -559,7 +584,7 @@ ApplicationWindow {
 
                                         // Drop indicator line
                                         Rectangle {
-                                            id: inactiveDropLine; visible: _dragging && _dragSourceList === "inactive"
+                                            id: inactiveDropLine; visible: _dragging && _dragSourceList === "inactive" && _dragFolderId === ""
                                             width: parent.width - 16; height: 2; radius: 1; color: Theme.accent; x: 8; z: 10
                                             y: {
                                                 if (!visible) return 0
@@ -625,9 +650,34 @@ ApplicationWindow {
                                                 MouseArea {
                                                     id: folderHdrMa; anchors.fill: parent; hoverEnabled: true
                                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
-                                                    onClicked: function(mouse) {
-                                                        if (mouse.button === Qt.RightButton) { folderCtxMenu.popup() }
-                                                        else { inactiveLv.currentIndex = proxyDelegate.index }
+                                                    property point pressPos: Qt.point(0, 0)
+                                                    property bool didDrag: false
+                                                    onPressed: function(mouse) {
+                                                        if (mouse.button === Qt.RightButton) { folderCtxMenu.popup(); return }
+                                                        pressPos = Qt.point(mouse.x, mouse.y); didDrag = false
+                                                    }
+                                                    onPositionChanged: function(mouse) {
+                                                        if (!pressed || root._renamingFolderId === proxyDelegate.folderId) return
+                                                        var dx = mouse.x - pressPos.x; var dy = mouse.y - pressPos.y
+                                                        if (!_dragging && (dx*dx + dy*dy > 100)) {
+                                                            _dragging = true; _dragFolderId = proxyDelegate.folderId
+                                                            _dragName = "\uD83D\uDCC1 " + proxyDelegate.folderName; _dragSourceList = "inactive"
+                                                            _dragUuid = ""
+                                                        }
+                                                        if (_dragging) {
+                                                            var gp = folderHdrMa.mapToGlobal(mouse.x, mouse.y)
+                                                            _dragPos = root.contentItem.mapFromGlobal(gp.x, gp.y)
+                                                            didDrag = true
+                                                        }
+                                                    }
+                                                    onReleased: function(mouse) {
+                                                        if (mouse.button === Qt.RightButton) return
+                                                        if (_dragging && _dragFolderId !== "") {
+                                                            var gp = folderHdrMa.mapToGlobal(mouse.x, mouse.y)
+                                                            root._finishFolderDrag(gp)
+                                                        } else if (!didDrag) {
+                                                            inactiveLv.currentIndex = proxyDelegate.index
+                                                        }
                                                     }
                                                     onDoubleClicked: root._toggleFolderExpanded(proxyDelegate.folderId)
                                                 }
@@ -974,14 +1024,15 @@ ApplicationWindow {
     property string _dragName: ""
     property string _dragSourceList: ""
     property point _dragPos: Qt.point(0, 0)
+    property string _dragFolderId: ""  // non-empty when dragging a folder
 
     // Floating ghost label that follows cursor during drag
     Rectangle {
         id: dragGhost; visible: _dragging; z: 1000
         x: _dragPos.x + 12; y: _dragPos.y + 4
         width: ghostText.implicitWidth + 20; height: 26; radius: 5
-        color: Theme.accent; opacity: 0.85
-        Text { id: ghostText; anchors.centerIn: parent; text: _dragName; color: "white"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
+        color: _dragFolderId !== "" ? Theme.mode === "dark" ? "#2A2D32" : "#ECEDF0" : Theme.accent; opacity: 0.85
+        Text { id: ghostText; anchors.centerIn: parent; text: _dragName; color: _dragFolderId !== "" ? Theme.textPrimary : "white"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
     }
 
     // ---- Folder state for inactive mod categorization (QML-only, does not affect Python/mod files) ----
@@ -1211,6 +1262,27 @@ ApplicationWindow {
                 flickDeceleration: 3000; maximumFlickVelocity: 2500
                 interactive: !_dragging  // disable flickable during drag
                 focus: true
+                MouseArea {
+                    anchors.fill: parent; enabled: _dragging; z: 100
+                    hoverEnabled: true
+                    acceptedButtons: Qt.LeftButton
+                    onPositionChanged: function(mouse) {
+                        if (_dragging) {
+                            var gp = mapToGlobal(mouse.x, mouse.y)
+                            _dragPos = root.contentItem.mapFromGlobal(gp.x, gp.y)
+                        }
+                    }
+                    onReleased: function(mouse) {
+                        if (_dragging) {
+                            var gp = mapToGlobal(mouse.x, mouse.y)
+                            root._finishDrag(gp, cardRoot)
+                        }
+                    }
+                    onWheel: function(wheel) {
+                        var step = wheel.angleDelta.y > 0 ? -90 : 90
+                        lv.contentY = Math.max(0, Math.min(lv.contentY + step, lv.contentHeight - lv.height))
+                    }
+                }
                 keyNavigationEnabled: true
 
                 Keys.onReturnPressed: { if (currentIndex >= 0) transferMod(currentIndex, listModel.getUuidAt(currentIndex)) }
@@ -1453,7 +1525,7 @@ ApplicationWindow {
     function _finishDrag(globalPos, sourceCard) {
         var uuid = _dragUuid
         var srcKey = _dragSourceList
-        _dragging = false; _dragUuid = ""; _dragName = ""; _dragSourceList = ""
+        _dragging = false; _dragUuid = ""; _dragName = ""; _dragSourceList = ""; _dragFolderId = ""
 
         if (!uuid) return
 
@@ -1477,12 +1549,18 @@ ApplicationWindow {
                 // Cross-list transfer
                 sourceCard.listModel.removeByUuids([uuid])
                 card.listModel.insertUuids([uuid], -1)
-                // Active → Inactive: restore remembered folder
+                // Active → Inactive: restore remembered folder (only if not already present)
                 if (srcKey === "active" && card.listKey === "inactive") {
                     var mem = _modFolderMemory[uuid]
                     if (mem) {
                         for (var fi = 0; fi < _folders.length; fi++) {
-                            if (_folders[fi].id === mem) { _addModToFolder(uuid, mem); break }
+                            if (_folders[fi].id === mem) {
+                                // UUID is still in modUuids at its original position — skip re-add
+                                if (_folders[fi].modUuids.indexOf(uuid) < 0) {
+                                    _addModToFolder(uuid, mem)
+                                }
+                                break
+                            }
                         }
                     }
                 }
@@ -1497,28 +1575,42 @@ ApplicationWindow {
 
                 // Determine which folder the insert line falls into
                 // insertLine N means "between row N-1 and row N"
-                // Look at the row above (N-1) and below (N) to determine folder context
-                var aboveIdx = insertLine - 1
-                var belowIdx = insertLine < _inactiveProxyModel.count ? insertLine : -1
+                // Scan above and below, skipping the dragged item itself
                 var targetFolderId = ""
 
-                // Check the row above the line first
-                if (aboveIdx >= 0) {
-                    var aboveItem = _inactiveProxyModel.get(aboveIdx)
-                    if (aboveItem.itemType === "mod" && aboveItem.folderId !== "")
-                        targetFolderId = aboveItem.folderId
-                    else if (aboveItem.itemType === "folder")
-                        targetFolderId = aboveItem.folderId  // right below folder header = insert at top
+                // Scan upward from insert line to find folder context
+                for (var sa = insertLine - 1; sa >= 0; sa--) {
+                    var aboveItem = _inactiveProxyModel.get(sa)
+                    if (aboveItem.itemType === "mod" && aboveItem.uuid === uuid) continue  // skip self
+                    if (aboveItem.itemType === "mod" && aboveItem.folderId !== "") {
+                        targetFolderId = aboveItem.folderId; break
+                    }
+                    if (aboveItem.itemType === "folder") {
+                        targetFolderId = aboveItem.folderId; break  // right below folder header
+                    }
+                    break  // uncategorized mod above = not in a folder
                 }
-                // If above is uncategorized, check below
-                if (targetFolderId === "" && belowIdx >= 0) {
-                    var belowItem = _inactiveProxyModel.get(belowIdx)
-                    if (belowItem.itemType === "mod" && belowItem.folderId !== "")
-                        targetFolderId = belowItem.folderId
+                // If above is uncategorized or empty, check below
+                if (targetFolderId === "") {
+                    for (var sb = insertLine; sb < _inactiveProxyModel.count; sb++) {
+                        var belowItem = _inactiveProxyModel.get(sb)
+                        if (belowItem.itemType === "mod" && belowItem.uuid === uuid) continue  // skip self
+                        if (belowItem.itemType === "mod" && belowItem.folderId !== "") {
+                            targetFolderId = belowItem.folderId; break
+                        }
+                        break  // folder header or uncategorized = not in a folder
+                    }
+                }
+
+                // Find current folder of the dragged mod
+                var currentFolderId = ""
+                for (var cf = 0; cf < _inactiveProxyModel.count; cf++) {
+                    var cfItem = _inactiveProxyModel.get(cf)
+                    if (cfItem.itemType === "mod" && cfItem.uuid === uuid) { currentFolderId = cfItem.folderId; break }
                 }
 
                 if (targetFolderId !== "") {
-                    // Count how many mods of this folder are above the insert line
+                    // Count how many mods of this folder are above the insert line (excluding dragged)
                     var posInFolder = 0
                     for (var pi = 0; pi < insertLine; pi++) {
                         var pItem = _inactiveProxyModel.get(pi)
@@ -1526,8 +1618,41 @@ ApplicationWindow {
                             posInFolder++
                     }
                     _addModToFolder(uuid, targetFolderId, posInFolder)
-                } else {
+                } else if (currentFolderId !== "") {
+                    // Moving out of a folder to uncategorized
                     _removeModFromFolder(uuid)
+                } else {
+                    // Uncategorized mod reorder — move in the Python model directly
+                    var allUuids = inactiveModsModel.getUuids()
+                    var fromModelIdx = allUuids.indexOf(uuid)
+                    // Count uncategorized mods above insert line (excluding dragged) to find target model index
+                    var uncatAbove = 0
+                    for (var ui = 0; ui < insertLine; ui++) {
+                        var uItem = _inactiveProxyModel.get(ui)
+                        if (uItem.itemType === "mod" && uItem.folderId === "" && uItem.uuid !== uuid)
+                            uncatAbove++
+                    }
+                    // Find the model index of the uncatAbove-th uncategorized mod
+                    var uuidToFolder2 = {}
+                    for (var ff = 0; ff < _folders.length; ff++) {
+                        for (var mm = 0; mm < _folders[ff].modUuids.length; mm++)
+                            uuidToFolder2[_folders[ff].modUuids[mm]] = true
+                    }
+                    var toModelIdx = 0
+                    var uncatCount = 0
+                    for (var mi = 0; mi < allUuids.length; mi++) {
+                        if (uuidToFolder2[allUuids[mi]]) continue
+                        if (allUuids[mi] === uuid) continue
+                        if (uncatCount === uncatAbove) { toModelIdx = mi; break }
+                        uncatCount++
+                        toModelIdx = mi + 1
+                    }
+                    // Adjust for downward drag: removal shifts items up by 1
+                    if (fromModelIdx >= 0 && fromModelIdx < toModelIdx) toModelIdx--
+                    if (fromModelIdx >= 0 && fromModelIdx !== toModelIdx) {
+                        inactiveModsModel.moveItem(fromModelIdx, toModelIdx)
+                        _rebuildInactiveProxy()
+                    }
                 }
             } else {
                 // Same list: active — reorder
@@ -1547,6 +1672,60 @@ ApplicationWindow {
             root.refreshErrorsWarnings()
             return
         }
+    }
+
+    // Handle folder drag-drop reordering
+    function _finishFolderDrag(globalPos) {
+        var folderId = _dragFolderId
+        _dragging = false; _dragFolderId = ""; _dragName = ""; _dragSourceList = ""; _dragUuid = ""
+        if (!folderId || _folders.length < 2) return
+
+        // Find current folder index
+        var fromIdx = -1
+        for (var i = 0; i < _folders.length; i++) {
+            if (_folders[i].id === folderId) { fromIdx = i; break }
+        }
+        if (fromIdx < 0) return
+
+        // Calculate insert line from drop position
+        var lvLocal = inactiveLv.mapFromGlobal(globalPos.x, globalPos.y)
+        var rawY = lvLocal.y + inactiveLv.contentY
+        var insertLine = Math.round(rawY / 30)
+        if (insertLine < 0) insertLine = 0
+        if (insertLine > _inactiveProxyModel.count) insertLine = _inactiveProxyModel.count
+
+        // Find all folder header positions in proxy (excluding dragged folder)
+        var folderPositions = []
+        for (var p = 0; p < _inactiveProxyModel.count; p++) {
+            var item = _inactiveProxyModel.get(p)
+            if (item.itemType === "folder" && item.folderId !== folderId) {
+                folderPositions.push({folderId: item.folderId, proxyRow: p})
+            }
+        }
+
+        // Determine target index: find which other folder the insert line is before
+        var toIdx = _folders.length  // default: after all folders
+        for (var fp = 0; fp < folderPositions.length; fp++) {
+            if (folderPositions[fp].proxyRow >= insertLine) {
+                for (var fi = 0; fi < _folders.length; fi++) {
+                    if (_folders[fi].id === folderPositions[fp].folderId) { toIdx = fi; break }
+                }
+                break
+            }
+        }
+
+        // Adjust for removal shift
+        if (fromIdx < toIdx) toIdx--
+        if (fromIdx === toIdx) return
+
+        // Reorder _folders array
+        var newFolders = _folders.slice()
+        var moved = newFolders.splice(fromIdx, 1)[0]
+        newFolders.splice(toIdx, 0, moved)
+        _folders = newFolders
+
+        _saveFolderState()
+        _rebuildInactiveProxy()
     }
 
     // Recompute errors/warnings for both lists after any mod transfer/reorder
@@ -1731,8 +1910,13 @@ ApplicationWindow {
 
     // ---- Proxy model rebuild/sync ----
     function _rebuildInactiveProxy() {
-        _inactiveProxyModel.clear()
         if (!inactiveModsModel) return
+
+        // Save scroll position, detach model to prevent ListView from reacting during rebuild
+        var savedY = inactiveLv.contentY
+        inactiveLv.model = null
+
+        _inactiveProxyModel.clear()
         var allUuids = inactiveModsModel.getUuids()
 
         // Build uuid→row map
@@ -1764,23 +1948,37 @@ ApplicationWindow {
             })
             if (f.expanded) {
                 for (var em = 0; em < validMods.length; em++) {
-                    _appendModEntry(validMods[em], f.id, rowMap)
+                    _inactiveProxyModel.append(_buildModEntry(validMods[em], f.id, rowMap))
                 }
             }
         }
 
         // Uncategorized mods (preserving source model order)
         for (var u = 0; u < allUuids.length; u++) {
-            if (!uuidToFolder[allUuids[u]]) _appendModEntry(allUuids[u], "", rowMap)
+            if (!uuidToFolder[allUuids[u]])
+                _inactiveProxyModel.append(_buildModEntry(allUuids[u], "", rowMap))
         }
+
+        // Re-attach model and restore scroll position
+        inactiveLv.model = _inactiveProxyModel
+        var maxY = Math.max(0, _inactiveProxyModel.count * 30 - inactiveLv.height)
+        inactiveLv.contentY = Math.min(savedY, maxY)
     }
 
-    function _appendModEntry(uuid, folderId, rowMap) {
+    function _buildModEntry(uuid, folderId, rowMap) {
         var row = rowMap[uuid]
-        if (row === undefined) return
+        if (row === undefined) return {
+            itemType: "mod", folderId: folderId, uuid: uuid,
+            name: "Unknown", packageId: "", dataSource: "local",
+            hasCSharp: false, hasGit: false, hasSteamcmd: false,
+            errors: "", warnings: "", errorsWarnings: "",
+            filtered: false, invalid: false, modColor: "",
+            isNew: false, inSave: false,
+            folderName: "", folderExpanded: false, folderModCount: 0
+        }
         var m = inactiveModsModel
         var idx = m.index(row, 0)
-        _inactiveProxyModel.append({
+        return {
             itemType: "mod", folderId: folderId,
             uuid: uuid,
             name: m.data(idx, _R_Name) || "Unknown",
@@ -1798,7 +1996,7 @@ ApplicationWindow {
             isNew: m.data(idx, _R_IsNew) || false,
             inSave: m.data(idx, _R_InSave) || false,
             folderName: "", folderExpanded: false, folderModCount: 0
-        })
+        }
     }
 
     function _syncProxyMeta() {
