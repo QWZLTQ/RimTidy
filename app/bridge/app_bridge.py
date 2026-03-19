@@ -100,6 +100,10 @@ class AppBridge(QObject):
             return [], []
         config_path = str(Path(instance.config_folder) / "ModsConfig.xml")
         active, inactive, _, _ = meta_utils.get_mods_from_list(config_path)
+        # Cache initial state for Restore button (same as original Widget UI)
+        if not self._active_restore:
+            self._active_restore = list(active)
+            self._inactive_restore = list(inactive)
         return active, inactive
 
     @Slot(result="QVariant")

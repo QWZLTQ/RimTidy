@@ -634,7 +634,13 @@ ApplicationWindow {
 
                                         // Drop indicator line
                                         Rectangle {
-                                            id: inactiveDropLine; visible: _dragging && _dragSourceList === "inactive" && _dragFolderId === ""
+                                            id: inactiveDropLine; visible: {
+                                                if (!_dragging || _dragSourceList !== "inactive" || _dragFolderId !== "") return false
+                                                // Hide when cursor leaves the inactive list area
+                                                var gp = root.contentItem.mapToGlobal(_dragPos.x, _dragPos.y)
+                                                var lp = inactiveCard.mapFromGlobal(gp.x, gp.y)
+                                                return lp.x >= 0 && lp.x <= inactiveCard.width && lp.y >= 0 && lp.y <= inactiveCard.height
+                                            }
                                             width: parent.width - 16; height: 2; radius: 1; color: Theme.accent; x: 8; z: 10
                                             y: {
                                                 if (!visible) return 0
@@ -642,7 +648,16 @@ ApplicationWindow {
                                                 var lvLocal = inactiveLv.mapFromGlobal(globalPos.x, globalPos.y)
                                                 var idx = Math.round((lvLocal.y + inactiveLv.contentY) / 30)
                                                 if (idx < 0) idx = 0
-                                                if (idx > inactiveLv.count) idx = inactiveLv.count
+                                                // Clamp to visible item count (use proxy model data, not itemAtIndex which returns null outside viewport)
+                                                var visItems = 0
+                                                var filterText = searchInactive.text ? searchInactive.text.toLowerCase() : ""
+                                                for (var ci = 0; ci < _inactiveProxyModel.count; ci++) {
+                                                    var cItem = _inactiveProxyModel.get(ci)
+                                                    if (cItem.itemType === "folder") { visItems++; continue }
+                                                    if (filterText && cItem.name.toLowerCase().indexOf(filterText) < 0) continue
+                                                    visItems++
+                                                }
+                                                if (idx > visItems) idx = visItems
                                                 return idx * 30 - inactiveLv.contentY
                                             }
                                         }
@@ -1044,17 +1059,20 @@ ApplicationWindow {
                             var inactive = appBridge.getInactiveModUuids()
                             activeModsModel.populate(active)
                             inactiveModsModel.populate(inactive)
+                            root.refreshErrorsWarnings()
                         }}
                         ActionBtn { text: root.tr("Clear"); onClicked: {
                             var lists = appBridge.getClearedLists()
                             activeModsModel.populate(lists.active)
                             inactiveModsModel.populate(lists.inactive)
+                            root.refreshErrorsWarnings()
                         }}
                         ActionBtn { text: root.tr("Restore"); onClicked: {
                             var lists = appBridge.getRestoreLists()
                             if (lists.active.length > 0) {
                                 activeModsModel.populate(lists.active)
                                 inactiveModsModel.populate(lists.inactive)
+                                root.refreshErrorsWarnings()
                             }
                         }}
                         ActionBtn { text: root.tr("Sort"); onClicked: {
@@ -1308,6 +1326,45 @@ ApplicationWindow {
         property string sourceFilter: "All"
         property bool warningsOnly: false
 
+        // Calculate model insertion index from global mouse position,
+        // accounting for filtered (hidden) items.
+        function getDropModelIndex(globalY) {
+            var localPos = lv.mapFromGlobal(0, globalY)
+            var rawY = localPos.y + lv.contentY
+            var visibleIdx = Math.round(rawY / 30)
+            if (visibleIdx < 0) visibleIdx = 0
+            // No filter active — visible index == model index
+            var hasFilter = cardRoot.filterText || cardRoot.sourceFilter !== "All" || cardRoot.warningsOnly
+            if (!hasFilter) {
+                if (visibleIdx > lv.count) visibleIdx = lv.count
+                return visibleIdx
+            }
+            // Map visible index to model index using model data (not itemAtIndex,
+            // which returns null for delegates outside the viewport).
+            var ft = cardRoot.filterText ? cardRoot.filterText.toLowerCase() : ""
+            var count = 0
+            for (var i = 0; i < lv.count; i++) {
+                var idx = listModel.index(i, 0)
+                var name = listModel.data(idx, 258) || ""       // NameRole = UserRole+2
+                var ds = listModel.data(idx, 260) || ""         // DataSourceRole = UserRole+4
+                var errs = listModel.data(idx, 265) || ""       // ErrorsRole = UserRole+9
+                var warns = listModel.data(idx, 266) || ""      // WarningsRole = UserRole+10
+                var inv = listModel.data(idx, 269) || false     // InvalidRole = UserRole+13
+                // Replicate matchesFilter logic
+                var vis = true
+                if (ft && name.toLowerCase().indexOf(ft) < 0) vis = false
+                if (vis && cardRoot.sourceFilter === "Local" && ds !== "local") vis = false
+                if (vis && cardRoot.sourceFilter === "Steam" && ds !== "workshop") vis = false
+                if (vis && cardRoot.sourceFilter === "DLC" && ds !== "expansion") vis = false
+                if (vis && cardRoot.warningsOnly && errs === "" && warns === "" && !inv) vis = false
+                if (vis) {
+                    if (count === visibleIdx) return i
+                    count++
+                }
+            }
+            return lv.count  // append
+        }
+
         // Invisible MouseArea to detect drops on this card
         MouseArea {
             id: cardMa; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton
@@ -1393,17 +1450,48 @@ ApplicationWindow {
 
                 // Drop indicator line
                 Rectangle {
-                    id: dropLine; visible: _dragging && _dragSourceList === cardRoot.listKey
+                    id: dropLine; visible: {
+                        if (!_dragging || _dragFolderId !== "") return false
+                        if (_dragSourceList === cardRoot.listKey) return true
+                        // Cross-list: check if cursor is over this card using _dragPos
+                        var gp = root.contentItem.mapToGlobal(_dragPos.x, _dragPos.y)
+                        var lp = cardRoot.mapFromGlobal(gp.x, gp.y)
+                        return lp.x >= 0 && lp.x <= cardRoot.width && lp.y >= 0 && lp.y <= cardRoot.height
+                    }
                     width: parent.width - 16; height: 2; radius: 1; color: Theme.accent; x: 8; z: 10
                     y: {
                         if (!visible) return 0
                         // _dragPos is relative to root.contentItem, convert to global then to lv-local
                         var globalPos = root.contentItem.mapToGlobal(_dragPos.x, _dragPos.y)
                         var lvLocal = lv.mapFromGlobal(globalPos.x, globalPos.y)
-                        var idx = Math.round((lvLocal.y + lv.contentY) / 30)
-                        if (idx < 0) idx = 0
-                        if (idx > lv.count) idx = lv.count
-                        return idx * 30 - lv.contentY
+                        var rawY = lvLocal.y + lv.contentY
+                        var visibleIdx = Math.round(rawY / 30)
+                        if (visibleIdx < 0) visibleIdx = 0
+                        // Count visible items to clamp (use model data, not itemAtIndex)
+                        var hasFilter = cardRoot.filterText || cardRoot.sourceFilter !== "All" || cardRoot.warningsOnly
+                        if (hasFilter) {
+                            var visCount = 0
+                            var _ft = cardRoot.filterText ? cardRoot.filterText.toLowerCase() : ""
+                            for (var vi = 0; vi < lv.count; vi++) {
+                                var _idx = listModel.index(vi, 0)
+                                var _nm = (listModel.data(_idx, 258) || "").toLowerCase()
+                                var _ds = listModel.data(_idx, 260) || ""
+                                var _er = listModel.data(_idx, 265) || ""
+                                var _wn = listModel.data(_idx, 266) || ""
+                                var _iv = listModel.data(_idx, 269) || false
+                                var _v = true
+                                if (_ft && _nm.indexOf(_ft) < 0) _v = false
+                                if (_v && cardRoot.sourceFilter === "Local" && _ds !== "local") _v = false
+                                if (_v && cardRoot.sourceFilter === "Steam" && _ds !== "workshop") _v = false
+                                if (_v && cardRoot.sourceFilter === "DLC" && _ds !== "expansion") _v = false
+                                if (_v && cardRoot.warningsOnly && _er === "" && _wn === "" && !_iv) _v = false
+                                if (_v) visCount++
+                            }
+                            if (visibleIdx > visCount) visibleIdx = visCount
+                        } else {
+                            if (visibleIdx > lv.count) visibleIdx = lv.count
+                        }
+                        return visibleIdx * 30 - lv.contentY
                     }
                 }
 
@@ -1641,8 +1729,14 @@ ApplicationWindow {
 
             if (card.listKey !== srcKey) {
                 // Cross-list transfer
+                // Inactive → Active: insert at mouse position
+                // Active → Inactive: append (folder memory restores position)
+                var crossDropIdx = -1
+                if (srcKey === "inactive" && card.listKey === "active") {
+                    crossDropIdx = card.getDropModelIndex(globalPos.y)
+                }
                 sourceCard.listModel.removeByUuids([uuid])
-                card.listModel.insertUuids([uuid], -1)
+                card.listModel.insertUuids([uuid], crossDropIdx)
                 // Active → Inactive: restore remembered folder (only if not already present)
                 if (srcKey === "active" && card.listKey === "inactive") {
                     var mem = _modFolderMemory[uuid]
@@ -1663,8 +1757,23 @@ ApplicationWindow {
                 // Use Math.round to match the drop indicator line (insert BETWEEN rows)
                 var lvLocal = inactiveLv.mapFromGlobal(globalPos.x, globalPos.y)
                 var rawY = lvLocal.y + inactiveLv.contentY
-                var insertLine = Math.round(rawY / 30)  // line between rows
-                if (insertLine < 0) insertLine = 0
+                var visibleLine = Math.round(rawY / 30)  // visible row index
+                if (visibleLine < 0) visibleLine = 0
+                // Convert visible row index to proxy model index (skip filtered items)
+                var insertLine = _inactiveProxyModel.count  // default: end
+                var visCount = 0
+                for (var vl = 0; vl < _inactiveProxyModel.count; vl++) {
+                    var vlItem = _inactiveProxyModel.get(vl)
+                    var vlVisible = true
+                    if (vlItem.itemType === "mod") {
+                        if (searchInactive.text && vlItem.name.toLowerCase().indexOf(searchInactive.text.toLowerCase()) < 0)
+                            vlVisible = false
+                    }
+                    if (vlVisible) {
+                        if (visCount === visibleLine) { insertLine = vl; break }
+                        visCount++
+                    }
+                }
                 if (insertLine > _inactiveProxyModel.count) insertLine = _inactiveProxyModel.count
 
                 // Determine which folder the insert line falls into
@@ -1680,9 +1789,13 @@ ApplicationWindow {
                 var effectiveCount = 0
                 for (var ec = 0; ec < _inactiveProxyModel.count; ec++) {
                     var ecItem = _inactiveProxyModel.get(ec)
-                    if (ecItem.uuid !== uuid) effectiveCount = ec + 1
+                    // Only count visible items (not filtered out)
+                    var ecVisible = true
+                    if (ecItem.itemType === "mod" && searchInactive.text && ecItem.name.toLowerCase().indexOf(searchInactive.text.toLowerCase()) < 0)
+                        ecVisible = false
+                    if (ecVisible && ecItem.uuid !== uuid) effectiveCount++
                 }
-                var contentBottom = effectiveCount * 30  // pixel Y of last item's bottom
+                var contentBottom = effectiveCount * 30  // pixel Y of last visible item's bottom
                 var droppedBelowAll = rawY > contentBottom + 15
 
                 // Scan upward from insert line to find folder context
@@ -1758,17 +1871,33 @@ ApplicationWindow {
                     if (fromModelIdx >= 0 && fromModelIdx < toModelIdx) toModelIdx--
                     if (fromModelIdx >= 0 && fromModelIdx !== toModelIdx) {
                         inactiveModsModel.moveItem(fromModelIdx, toModelIdx)
-                        _rebuildInactiveProxy()
+                        // Lightweight proxy update: move within proxy instead of full rebuild
+                        var proxyFrom = -1, proxyTo = -1
+                        for (var pf = 0; pf < _inactiveProxyModel.count; pf++) {
+                            var pfItem = _inactiveProxyModel.get(pf)
+                            if (pfItem.itemType === "mod" && pfItem.uuid === uuid) { proxyFrom = pf; break }
+                        }
+                        if (proxyFrom >= 0) {
+                            // Find proxy target: count uncategorized visible mods
+                            var pUncatSeen = 0
+                            proxyTo = _inactiveProxyModel.count
+                            for (var pt = 0; pt < _inactiveProxyModel.count; pt++) {
+                                var ptItem = _inactiveProxyModel.get(pt)
+                                if (ptItem.itemType === "mod" && ptItem.folderId === "" && ptItem.uuid !== uuid) {
+                                    if (pUncatSeen === uncatAbove) { proxyTo = pt; break }
+                                    pUncatSeen++
+                                }
+                            }
+                            _inactiveProxyModel.move(proxyFrom, proxyTo, 1)
+                        }
                     }
                 }
             } else {
-                // Same list: active — reorder
+                // Same list: active — reorder (filter-aware)
+                var targetIdx = card.getDropModelIndex(globalPos.y)
                 var uuids = card.listModel.getUuids()
                 var fromIdx = -1
                 for (var k = 0; k < uuids.length; k++) { if (uuids[k] === uuid) { fromIdx = k; break } }
-                var lvLocalY = localPos.y - 29
-                var targetIdx = Math.round(lvLocalY / 30)
-                if (targetIdx < 0) targetIdx = 0
                 if (targetIdx > uuids.length) targetIdx = uuids.length
                 // When dragging down, the source removal shifts items up by 1
                 if (fromIdx >= 0 && targetIdx > fromIdx) targetIdx--
@@ -1835,41 +1964,54 @@ ApplicationWindow {
         _rebuildInactiveProxy()
     }
 
-    // Recompute errors/warnings for both lists after any mod transfer/reorder
+    // Debounced refresh: delay errors/warnings recomputation so rapid
+    // drag-and-drop operations feel smooth. The actual heavy work runs
+    // after the user stops moving mods for 300ms.
+    Timer {
+        id: refreshEwTimer
+        interval: 300; repeat: false
+        onTriggered: _doRefreshErrorsWarnings()
+    }
     function refreshErrorsWarnings() {
+        refreshEwTimer.restart()
+    }
+
+    // Spread the recompute across two frames to avoid a single long freeze.
+    // Frame 1: active list.  Frame 2 (via Timer): inactive list + summary.
+    Timer {
+        id: refreshEwPhase2
+        interval: 0; repeat: false  // next event-loop iteration
+        onTriggered: {
+            var inactiveEw = appBridge.getModErrorsWarnings(inactiveModsModel.getUuids(), "Inactive")
+            if (inactiveEw) {
+                var inactiveBatch = {}
+                var inactiveUuids = inactiveModsModel.getUuids()
+                for (var j = 0; j < inactiveUuids.length; j++)
+                    inactiveBatch[inactiveUuids[j]] = {"errors": "", "warnings": "", "errors_warnings": ""}
+                for (var uuid2 in inactiveEw) {
+                    if (uuid2 !== "__summary__") inactiveBatch[uuid2] = inactiveEw[uuid2]
+                }
+                inactiveModsModel.setBatchItemMeta(inactiveBatch)
+            }
+            updateErrorSummary()
+        }
+    }
+    function _doRefreshErrorsWarnings() {
         if (!appBridge || !appBridge.isInitialized()) return
-        var activeUuidsList = activeModsModel.getUuids()
-        console.log("refreshErrorsWarnings: active count =", activeUuidsList.length)
-        // Active list: full check
-        var activeEw = appBridge.getModErrorsWarnings(activeUuidsList, "Active")
-        console.log("refreshErrorsWarnings: activeEw keys =", Object.keys(activeEw).length)
+        // Phase 1: active list
+        var activeEw = appBridge.getModErrorsWarnings(activeModsModel.getUuids(), "Active")
         if (activeEw) {
             var activeBatch = {}
-            // First clear all existing errors
             var activeUuids = activeModsModel.getUuids()
-            for (var i = 0; i < activeUuids.length; i++) {
+            for (var i = 0; i < activeUuids.length; i++)
                 activeBatch[activeUuids[i]] = {"errors": "", "warnings": "", "errors_warnings": ""}
-            }
-            // Then set new errors
             for (var uuid in activeEw) {
                 if (uuid !== "__summary__") activeBatch[uuid] = activeEw[uuid]
             }
             activeModsModel.setBatchItemMeta(activeBatch)
         }
-        // Inactive list: version mismatch only
-        var inactiveEw = appBridge.getModErrorsWarnings(inactiveModsModel.getUuids(), "Inactive")
-        if (inactiveEw) {
-            var inactiveBatch = {}
-            var inactiveUuids = inactiveModsModel.getUuids()
-            for (var j = 0; j < inactiveUuids.length; j++) {
-                inactiveBatch[inactiveUuids[j]] = {"errors": "", "warnings": "", "errors_warnings": ""}
-            }
-            for (var uuid2 in inactiveEw) {
-                if (uuid2 !== "__summary__") inactiveBatch[uuid2] = inactiveEw[uuid2]
-            }
-            inactiveModsModel.setBatchItemMeta(inactiveBatch)
-        }
-        updateErrorSummary()
+        // Phase 2: inactive list on next frame
+        refreshEwPhase2.start()
     }
 
     // Update error summary when active model changes
