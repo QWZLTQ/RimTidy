@@ -1672,13 +1672,18 @@ ApplicationWindow {
                 // Scan above and below, skipping the dragged item itself
                 var targetFolderId = ""
 
-                // If dropped below all items (in the footer zone), always remove from folder
+                // If dropped below all items (in the footer zone), always remove from folder.
+                // Use raw pixel position: only count as "below all" if the cursor is
+                // more than half a row (15px) past the last non-dragged item's bottom edge.
+                // This lets users drop INTO a trailing empty/collapsed folder while still
+                // being able to drop into the blank zone further below to leave all folders.
                 var effectiveCount = 0
                 for (var ec = 0; ec < _inactiveProxyModel.count; ec++) {
                     var ecItem = _inactiveProxyModel.get(ec)
                     if (ecItem.uuid !== uuid) effectiveCount = ec + 1
                 }
-                var droppedBelowAll = insertLine >= effectiveCount
+                var contentBottom = effectiveCount * 30  // pixel Y of last item's bottom
+                var droppedBelowAll = rawY > contentBottom + 15
 
                 // Scan upward from insert line to find folder context
                 for (var sa = insertLine - 1; !droppedBelowAll && sa >= 0; sa--) {
