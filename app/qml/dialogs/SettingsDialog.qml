@@ -221,17 +221,40 @@ Popup {
                         id: toddsCol; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
                         anchors.margins: 20; spacing: 12
 
-                        SGroupTitle { text: tr("todds Texture Optimizer") }
-                        SDesc { text: tr("todds optimizes mod textures to DDS format for better game performance.") }
-                        SPathField { placeholderText: tr("todds executable path...") }
-
-                        SGroupTitle { text: tr("Optimization Settings") }
-                        SCheck { text: tr("Overwrite existing DDS files") }
-                        SCheck { text: tr("Delete original textures after conversion") }
-                        RowLayout { spacing: 8
-                            Text { text: tr("Texture quality:"); color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize }
-                            ComboBox { model: [tr("Low"), tr("Medium"), tr("High"), tr("Ultra")]; currentIndex: 2; implicitWidth: 120 }
+                        SGroupTitle { text: tr("Quality Preset") }
+                        RadioButton {
+                            text: tr("Optimized - Recommended for RimWorld")
+                            checked: settings.toddsPreset === "optimized"
+                            onToggled: if (checked) settings.toddsPreset = "optimized"
                         }
+                        RadioButton {
+                            text: tr("Custom todds command")
+                            checked: settings.toddsPreset === "custom"
+                            onToggled: if (checked) settings.toddsPreset = "custom"
+                        }
+                        SDesc { text: tr("If -p (path) is not specified, the path from the current active/all mods selection will be used.") }
+                        SPathField {
+                            placeholderText: tr("e.g.: -f BC1 -af BC7 -on -vf -fs -r Textures -t -p \"D:\\\\Mods\"")
+                            text: settings.toddsCustomCommand
+                            onTextEdited: settings.toddsCustomCommand = text
+                            enabled: settings.toddsPreset === "custom"
+                        }
+
+                        SGroupTitle { text: tr("When Optimizing Textures") }
+                        RadioButton {
+                            text: tr("Optimize active mods only")
+                            checked: settings.toddsActiveModsTarget
+                            onToggled: if (checked) settings.toddsActiveModsTarget = true
+                        }
+                        RadioButton {
+                            text: tr("Optimize all mods")
+                            checked: !settings.toddsActiveModsTarget
+                            onToggled: if (checked) settings.toddsActiveModsTarget = false
+                        }
+
+                        SGroupTitle { text: tr("Options") }
+                        SCheck { text: tr("Enable dry-run mode"); checked: settings.toddsDryRun; onToggled: settings.toddsDryRun = checked }
+                        SCheck { text: tr("Overwrite existing optimized textures"); checked: settings.toddsOverwrite; onToggled: settings.toddsOverwrite = checked }
                     }
                 }
 
@@ -307,6 +330,49 @@ Popup {
                         RowLayout { spacing: 8
                             Text { text: tr("Font size:"); color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize }
                             SpinBox { from: 8; to: 24; value: settings.fontSize; onValueModified: settings.fontSize = value }
+                        }
+
+                        SGroupTitle { text: tr("Custom Background") }
+                        SDesc { text: tr("Set a custom background image for the main window. Panels will become semi-transparent.") }
+                        RowLayout { spacing: 8; Layout.fillWidth: true
+                            SPathField {
+                                id: bgPathField
+                                placeholderText: tr("No image selected...")
+                                text: settings.customBackground
+                                Layout.fillWidth: true
+                                readOnly: true
+                            }
+                            SBtn { text: tr("Browse..."); onClicked: { var p = settings.pickBackgroundImage(); if (p) { bgPathField.text = p; Theme.customBackground = "file:///" + p } } }
+                            SBtn { text: tr("Clear"); onClicked: { settings.customBackground = ""; bgPathField.text = ""; Theme.customBackground = ""; Theme.panelOpacity = 1.0; opacitySlider.value = 100 } }
+                            Text { text: tr("Recommended: 1920×1080 or larger"); color: Theme.textTertiary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
+                        }
+
+                        SGroupTitle { text: tr("Panel Transparency") }
+                        SDesc { text: tr("Adjust the opacity of panels when a custom background is set.") }
+                        RowLayout { spacing: 12; Layout.fillWidth: true
+                            Text { text: tr("Transparent"); color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
+                            Slider {
+                                id: opacitySlider
+                                Layout.fillWidth: true
+                                from: 0; to: 100; stepSize: 1
+                                value: settings.panelOpacity * 100
+                                enabled: settings.customBackground !== ""
+                                onMoved: { var v = value / 100.0; settings.panelOpacity = v; Theme.panelOpacity = v }
+                                background: Rectangle {
+                                    x: opacitySlider.leftPadding; y: opacitySlider.topPadding + opacitySlider.availableHeight / 2 - height / 2
+                                    width: opacitySlider.availableWidth; height: 4; radius: 2; color: Theme.border
+                                    Rectangle { width: opacitySlider.visualPosition * parent.width; height: parent.height; radius: 2; color: opacitySlider.enabled ? Theme.accent : Theme.textTertiary }
+                                }
+                                handle: Rectangle {
+                                    x: opacitySlider.leftPadding + opacitySlider.visualPosition * (opacitySlider.availableWidth - width)
+                                    y: opacitySlider.topPadding + opacitySlider.availableHeight / 2 - height / 2
+                                    width: 18; height: 18; radius: 9
+                                    color: opacitySlider.pressed ? Theme.accentPressed : opacitySlider.hovered ? Theme.accentHover : Theme.accent
+                                    border.color: Theme.surface; border.width: 2
+                                }
+                            }
+                            Text { text: tr("Opaque"); color: Theme.textSecondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
+                            Text { text: Math.round(opacitySlider.value) + "%"; color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; Layout.preferredWidth: 40 }
                         }
 
                         SGroupTitle { text: tr("Mod List Colors") }

@@ -4,6 +4,8 @@ import QtQuick
 QtObject {
     property string mode: "light"
     property string scheme: "default"
+    property string customBackground: ""
+    property real panelOpacity: 1.0
 
     // ---- Full color scheme definitions ----
     readonly property var _schemes: ({
@@ -128,6 +130,8 @@ QtObject {
 
     // ---- Helpers ----
     function _s() { return _schemes[scheme] || _schemes["default"] }
+    // Apply panelOpacity to an arbitrary color string (hex or named)
+    function withPanelAlpha(c) { return Qt.rgba(Qt.color(c).r, Qt.color(c).g, Qt.color(c).b, panelOpacity) }
 
     // ---- Surface colors ----
     readonly property color background: mode === "dark" ? _s().bgD : _s().bgL

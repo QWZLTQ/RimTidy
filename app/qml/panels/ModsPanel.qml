@@ -15,8 +15,8 @@ ColumnLayout {
         Layout.fillWidth: true
         height: 36
         radius: Theme.borderRadius
-        color: Theme.card
-        border.color: searchInput.activeFocus ? Theme.accent : Theme.border
+        color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+        border.color: searchInput.activeFocus ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity)
         border.width: searchInput.activeFocus ? 2 : 1
 
         Behavior on border.color { ColorAnimation { duration: 120 } }

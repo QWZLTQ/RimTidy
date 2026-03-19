@@ -37,6 +37,18 @@ ApplicationWindow {
     function tr(key) { return i18n ? i18n.t(key) : key }
     property int resizeMargin: 6
 
+    // Sync custom background from settings on changes
+    Connections {
+        target: settings
+        function onSettingsChanged() {
+            if (settings.customBackground)
+                Theme.customBackground = "file:///" + settings.customBackground
+            else
+                Theme.customBackground = ""
+            Theme.panelOpacity = settings.panelOpacity
+        }
+    }
+
     // Resize edges
     MouseArea { anchors.top: parent.top; anchors.left: parent.left; anchors.right: parent.right; height: resizeMargin; cursorShape: Qt.SizeVerCursor; onPressed: root.startSystemResize(Qt.TopEdge) }
     MouseArea { anchors.bottom: parent.bottom; anchors.left: parent.left; anchors.right: parent.right; height: resizeMargin; cursorShape: Qt.SizeVerCursor; onPressed: root.startSystemResize(Qt.BottomEdge) }
@@ -44,6 +56,16 @@ ApplicationWindow {
     MouseArea { anchors.right: parent.right; anchors.top: parent.top; anchors.bottom: parent.bottom; width: resizeMargin; cursorShape: Qt.SizeHorCursor; onPressed: root.startSystemResize(Qt.RightEdge) }
     MouseArea { anchors.bottom: parent.bottom; anchors.right: parent.right; width: resizeMargin*2; height: resizeMargin*2; cursorShape: Qt.SizeFDiagCursor; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.RightEdge) }
     MouseArea { anchors.bottom: parent.bottom; anchors.left: parent.left; width: resizeMargin*2; height: resizeMargin*2; cursorShape: Qt.SizeBDiagCursor; onPressed: root.startSystemResize(Qt.BottomEdge | Qt.LeftEdge) }
+
+    // Custom background image
+    Image {
+        id: bgImage
+        anchors.fill: parent
+        source: Theme.customBackground
+        fillMode: Image.PreserveAspectCrop
+        visible: Theme.customBackground !== ""
+        z: -1
+    }
 
     ColumnLayout {
         anchors.fill: parent
@@ -175,9 +197,12 @@ ApplicationWindow {
 
                 Menu {
                     title: root.tr("Textures")
-                    HoverMenuItem { text: root.tr("Optimize Textures"); tip: root.tr("使用 todds 将 Mod 纹理优化为 DDS 格式"); onTriggered: menuActions.optimizeTextures() }
+                    HoverMenuItem { text: root.tr("Optimize Active Mods Textures"); tip: root.tr("仅优化已激活 Mod 的纹理"); onTriggered: menuActions.optimizeActiveModsTextures() }
+                    HoverMenuItem { text: root.tr("Optimize Inactive Mods Textures"); tip: root.tr("仅优化未激活 Mod 的纹理"); onTriggered: menuActions.optimizeInactiveModsTextures() }
+                    HoverMenuItem { text: root.tr("Optimize All Mods Textures"); tip: root.tr("优化所有 Mod 的纹理"); onTriggered: menuActions.optimizeAllModsTextures() }
                     MenuSeparator {}
-                    HoverMenuItem { text: root.tr("Delete .dds Textures"); tip: root.tr("删除没有对应 PNG 原图的孤立 DDS 文件"); onTriggered: menuActions.deleteDdsTextures() }
+                    HoverMenuItem { text: root.tr("Delete .dds Textures"); tip: root.tr("使用 todds 删除所有 .dds 纹理文件"); onTriggered: menuActions.deleteDdsTextures() }
+                    HoverMenuItem { text: root.tr("Delete Generated .dds Only"); tip: root.tr("仅删除优化生成的 .dds 文件（保留 Mod 原始 DDS）"); onTriggered: menuActions.deleteGeneratedDdsOnly() }
                 }
 
                 Menu {
@@ -243,8 +268,8 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     Layout.preferredWidth: parent.width * 0.35
                     radius: Theme.borderRadius
-                    color: Theme.card
-                    border.color: Theme.border; border.width: 1
+                    color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+                    border.color: Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity); border.width: 1
                     clip: true
 
                     // Safe property accessors (modInfo may be null initially)
@@ -432,8 +457,8 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true; spacing: 4
                                 Rectangle {
-                                    Layout.fillWidth: true; height: 36; radius: Theme.borderRadius; color: Theme.card
-                                    border.color: searchInactive.activeFocus ? Theme.accent : Theme.border
+                                    Layout.fillWidth: true; height: 36; radius: Theme.borderRadius; color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+                                    border.color: searchInactive.activeFocus ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity)
                                     border.width: searchInactive.activeFocus ? 2 : 1
                                     Behavior on border.color { ColorAnimation { duration: 120 } }
                                     TextInput {
@@ -450,12 +475,12 @@ ApplicationWindow {
                                     model: ["All", "Local", "Steam", "DLC"]
                                 }
                             }
-                            // Sort combobox + new folder button
+                            // Sort combobox + warnings filter + new folder button
                             RowLayout {
                                 Layout.fillWidth: true; spacing: 4
                                 StyledComboBox {
                                     id: inactiveSortCombo
-                                    Layout.fillWidth: true; implicitHeight: 30
+                                    implicitWidth: 100; implicitHeight: 30
                                     model: ["Name (A-Z)", "Name (Z-A)", "Author", "Package ID"]
                                     onCurrentIndexChanged: {
                                         if (!inactiveModsModel) return
@@ -465,6 +490,30 @@ ApplicationWindow {
                                             if (sorted.length > 0) inactiveModsModel.populate(sorted)
                                         }
                                     }
+                                }
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: root.tr("Only Show Warnings/Errors")
+                                    color: warningsOnlyBtn.active ? "#E6A817" : Theme.textSecondary
+                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall
+                                    verticalAlignment: Text.AlignVCenter
+                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: warningsOnlyBtn.active = !warningsOnlyBtn.active }
+                                }
+                                Button {
+                                    id: warningsOnlyBtn
+                                    property bool active: false
+                                    implicitWidth: 30; implicitHeight: 30
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: warningsOnlyBtn.active ? (Theme.mode === "dark" ? "#5C3D08" : "#FFF3CD") : warningsOnlyBtn.pressed ? "#EBEBEB" : warningsOnlyBtn.hovered ? Theme.hover : Theme.card
+                                        border.color: warningsOnlyBtn.active ? "#E6A817" : warningsOnlyBtn.hovered ? "#C0C0C0" : Theme.border; border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 80 } }
+                                    }
+                                    contentItem: Text {
+                                        text: "⚠"; color: warningsOnlyBtn.active ? "#E6A817" : Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 14
+                                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                                    }
+                                    onClicked: active = !active
                                 }
                                 Button {
                                     id: newFolderBtn
@@ -489,8 +538,8 @@ ApplicationWindow {
                             Rectangle {
                                 id: inactiveCard
                                 Layout.fillWidth: true; Layout.fillHeight: true
-                                radius: Theme.borderRadius; color: Theme.card
-                                border.color: _dragging && _dragSourceList !== "inactive" && inactiveCardMa.containsMouse ? Theme.accent : Theme.border
+                                radius: Theme.borderRadius; color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+                                border.color: _dragging && _dragSourceList !== "inactive" && inactiveCardMa.containsMouse ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity)
                                 border.width: _dragging && _dragSourceList !== "inactive" && inactiveCardMa.containsMouse ? 2 : 1
                                 Behavior on border.color { ColorAnimation { duration: 100 } }
 
@@ -531,7 +580,8 @@ ApplicationWindow {
                                         Layout.fillWidth: true; Layout.fillHeight: true
                                         clip: true; model: _inactiveProxyModel
                                         boundsBehavior: Flickable.StopAtBounds
-                                        flickDeceleration: 3000; maximumFlickVelocity: 2500
+                                        footer: Item { width: 1; height: 60 }  // Drop zone to move mods out of folders
+                                        flickDeceleration: 3000; maximumFlickVelocity: 0
                                         interactive: !_dragging
                                         focus: true; keyNavigationEnabled: true
                                         MouseArea {
@@ -629,6 +679,8 @@ ApplicationWindow {
                                                 if (inactiveSourceFilter.currentText === "Local" && dataSource !== "local") return false
                                                 if (inactiveSourceFilter.currentText === "Steam" && dataSource !== "workshop") return false
                                                 if (inactiveSourceFilter.currentText === "DLC" && dataSource !== "expansion") return false
+                                                // Warnings/errors only filter
+                                                if (warningsOnlyBtn.active && errors === "" && warnings === "" && !invalid) return false
                                                 return true
                                             }
 
@@ -643,7 +695,7 @@ ApplicationWindow {
                                                 color: {
                                                     if (inactiveLv.currentIndex === proxyDelegate.index) return Theme.selectionActive
                                                     if (folderHdrMa.containsMouse) return Theme.hover
-                                                    return Theme.mode === "dark" ? "#2A2D32" : "#ECEDF0"
+                                                    return Theme.withPanelAlpha(Theme.mode === "dark" ? "#2A2D32" : "#ECEDF0")
                                                 }
                                                 Behavior on color { ColorAnimation { duration: 80 } }
 
@@ -758,10 +810,10 @@ ApplicationWindow {
                                                     if (_dragging && _dragUuid === proxyDelegate.uuid) return Theme.selection
                                                     if (inactiveLv.currentIndex === proxyDelegate.index) return Theme.selectionActive
                                                     if (inactiveModMa.containsMouse) return Theme.hover
-                                                    if (proxyDelegate.errors !== "") return Theme.mode === "dark" ? "#3D1518" : "#FDE8E8"
-                                                    if (proxyDelegate.warnings !== "") return Theme.mode === "dark" ? "#3D2E08" : "#FFF8E1"
-                                                    if (proxyDelegate.invalid) return Theme.mode === "dark" ? "#3D1518" : "#FDE8E8"
-                                                    return Theme.card
+                                                    if (proxyDelegate.errors !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D1518" : "#FDE8E8")
+                                                    if (proxyDelegate.warnings !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D2E08" : "#FFF8E1")
+                                                    if (proxyDelegate.invalid) return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D1518" : "#FDE8E8")
+                                                    return Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
                                                 }
                                                 Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -876,8 +928,14 @@ ApplicationWindow {
                                                     Rectangle { width: 4; height: 16; radius: 2; Layout.alignment: Qt.AlignVCenter; color: proxyDelegate.dataSource === "expansion" ? "#107C10" : proxyDelegate.dataSource === "workshop" ? "#0078D4" : "#8A8A8A" }
                                                     Rectangle { visible: proxyDelegate.hasCSharp; width: 6; height: 6; radius: 3; color: "#9B59B6"; Layout.alignment: Qt.AlignVCenter }
                                                     Text { Layout.fillWidth: true; text: proxyDelegate.name; color: proxyDelegate.invalid || proxyDelegate.errorsWarnings !== "" ? Theme.danger : proxyDelegate.filtered ? Theme.textTertiary : Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
-                                                    Text { visible: proxyDelegate.warnings !== ""; text: "\u26A0"; color: Theme.warning; font.pixelSize: 14; Layout.alignment: Qt.AlignVCenter }
-                                                    Text { visible: proxyDelegate.errors !== ""; text: "\u2715"; color: Theme.danger; font.pixelSize: 14; font.weight: Font.Bold; Layout.alignment: Qt.AlignVCenter }
+                                                    Text {
+                                                        visible: proxyDelegate.warnings !== ""; text: "\u26A0"; color: Theme.warning; font.pixelSize: 14; Layout.alignment: Qt.AlignVCenter
+                                                        MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton; ToolTip.visible: containsMouse; ToolTip.text: proxyDelegate.warnings; ToolTip.delay: 300 }
+                                                    }
+                                                    Text {
+                                                        visible: proxyDelegate.errors !== ""; text: "\u2715"; color: Theme.danger; font.pixelSize: 14; font.weight: Font.Bold; Layout.alignment: Qt.AlignVCenter
+                                                        MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton; ToolTip.visible: containsMouse; ToolTip.text: proxyDelegate.errors; ToolTip.delay: 300 }
+                                                    }
                                                 }
                                             }
                                         }
@@ -895,8 +953,8 @@ ApplicationWindow {
                             RowLayout {
                                 Layout.fillWidth: true; spacing: 4
                                 Rectangle {
-                                    Layout.fillWidth: true; height: 36; radius: Theme.borderRadius; color: Theme.card
-                                    border.color: searchActive.activeFocus ? Theme.accent : Theme.border
+                                    Layout.fillWidth: true; height: 36; radius: Theme.borderRadius; color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+                                    border.color: searchActive.activeFocus ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity)
                                     border.width: searchActive.activeFocus ? 2 : 1
                                     Behavior on border.color { ColorAnimation { duration: 120 } }
                                     TextInput {
@@ -912,8 +970,34 @@ ApplicationWindow {
                                     model: ["All", "Local", "Steam", "DLC"]
                                 }
                             }
-                            // Spacer to match inactive sort combobox height
-                            Item { Layout.fillWidth: true; implicitHeight: 30 }
+                            // Warnings/errors filter for active mods
+                            RowLayout {
+                                Layout.fillWidth: true; spacing: 4; implicitHeight: 30
+                                Item { Layout.fillWidth: true }
+                                Text {
+                                    text: root.tr("Only Show Warnings/Errors")
+                                    color: activeWarningsOnlyBtn.active ? "#E6A817" : Theme.textSecondary
+                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall
+                                    verticalAlignment: Text.AlignVCenter
+                                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: activeWarningsOnlyBtn.active = !activeWarningsOnlyBtn.active }
+                                }
+                                Button {
+                                    id: activeWarningsOnlyBtn
+                                    property bool active: false
+                                    implicitWidth: 30; implicitHeight: 30
+                                    background: Rectangle {
+                                        radius: 6
+                                        color: activeWarningsOnlyBtn.active ? (Theme.mode === "dark" ? "#5C3D08" : "#FFF3CD") : activeWarningsOnlyBtn.pressed ? "#EBEBEB" : activeWarningsOnlyBtn.hovered ? Theme.hover : Theme.card
+                                        border.color: activeWarningsOnlyBtn.active ? "#E6A817" : activeWarningsOnlyBtn.hovered ? "#C0C0C0" : Theme.border; border.width: 1
+                                        Behavior on color { ColorAnimation { duration: 80 } }
+                                    }
+                                    contentItem: Text {
+                                        text: "⚠"; color: activeWarningsOnlyBtn.active ? "#E6A817" : Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: 14
+                                        horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter
+                                    }
+                                    onClicked: active = !active
+                                }
+                            }
                             ModListCard {
                                 Layout.fillWidth: true; Layout.fillHeight: true
                                 listTitle: root.tr("Active Mods")
@@ -922,6 +1006,7 @@ ApplicationWindow {
                                 listKey: "active"
                                 filterText: searchActive.text
                                 sourceFilter: activeSourceFilter.currentText
+                                warningsOnly: activeWarningsOnlyBtn.active
                             }
                         }
                     }
@@ -1210,8 +1295,8 @@ ApplicationWindow {
     component ModListCard: Rectangle {
         id: cardRoot
         radius: Theme.borderRadius
-        color: Theme.card
-        border.color: _dragging && _dragSourceList !== listKey && cardMa.containsMouse ? Theme.accent : Theme.border
+        color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+        border.color: _dragging && _dragSourceList !== listKey && cardMa.containsMouse ? Theme.accent : Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity)
         border.width: _dragging && _dragSourceList !== listKey && cardMa.containsMouse ? 2 : 1
         Behavior on border.color { ColorAnimation { duration: 100 } }
 
@@ -1221,6 +1306,7 @@ ApplicationWindow {
         property string listKey: ""
         property string filterText: ""
         property string sourceFilter: "All"
+        property bool warningsOnly: false
 
         // Invisible MouseArea to detect drops on this card
         MouseArea {
@@ -1330,6 +1416,8 @@ ApplicationWindow {
                         if (cardRoot.sourceFilter === "Local" && dataSource !== "local") return false
                         if (cardRoot.sourceFilter === "Steam" && dataSource !== "workshop") return false
                         if (cardRoot.sourceFilter === "DLC" && dataSource !== "expansion") return false
+                        // Warnings/errors only filter
+                        if (cardRoot.warningsOnly && errors === "" && warnings === "" && !invalid) return false
                         return true
                     }
                     width: lv.width; height: matchesFilter ? 30 : 0
@@ -1355,10 +1443,10 @@ ApplicationWindow {
                             if (lv.currentIndex === delegateItem.index) return Theme.selectionActive
                             if (dragMa.containsMouse) return Theme.hover
                             // Error/warning background tinting
-                            if (delegateItem.errors !== "") return Theme.mode === "dark" ? "#3D1518" : "#FDE8E8"
-                            if (delegateItem.warnings !== "") return Theme.mode === "dark" ? "#3D2E08" : "#FFF8E1"
-                            if (delegateItem.invalid) return Theme.mode === "dark" ? "#3D1518" : "#FDE8E8"
-                            return Theme.card
+                            if (delegateItem.errors !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D1518" : "#FDE8E8")
+                            if (delegateItem.warnings !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D2E08" : "#FFF8E1")
+                            if (delegateItem.invalid) return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D1518" : "#FDE8E8")
+                            return Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
                         }
                         Behavior on color { ColorAnimation { duration: 100 } }
 
@@ -1472,8 +1560,14 @@ ApplicationWindow {
                             Rectangle { width: 4; height: 16; radius: 2; Layout.alignment: Qt.AlignVCenter; color: delegateItem.dataSource === "expansion" ? "#107C10" : delegateItem.dataSource === "workshop" ? "#0078D4" : "#8A8A8A" }
                             Rectangle { visible: delegateItem.hasCSharp; width: 6; height: 6; radius: 3; color: "#9B59B6"; Layout.alignment: Qt.AlignVCenter }
                             Text { Layout.fillWidth: true; text: delegateItem.name; color: delegateItem.invalid || delegateItem.errorsWarnings !== "" ? Theme.danger : delegateItem.filtered ? Theme.textTertiary : Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; elide: Text.ElideRight; verticalAlignment: Text.AlignVCenter }
-                            Text { visible: delegateItem.warnings !== ""; text: "⚠"; color: Theme.warning; font.pixelSize: 14; Layout.alignment: Qt.AlignVCenter }
-                            Text { visible: delegateItem.errors !== ""; text: "✕"; color: Theme.danger; font.pixelSize: 14; font.weight: Font.Bold; Layout.alignment: Qt.AlignVCenter }
+                            Text {
+                                visible: delegateItem.warnings !== ""; text: "⚠"; color: Theme.warning; font.pixelSize: 14; Layout.alignment: Qt.AlignVCenter
+                                MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton; ToolTip.visible: containsMouse; ToolTip.text: delegateItem.warnings; ToolTip.delay: 300 }
+                            }
+                            Text {
+                                visible: delegateItem.errors !== ""; text: "✕"; color: Theme.danger; font.pixelSize: 14; font.weight: Font.Bold; Layout.alignment: Qt.AlignVCenter
+                                MouseArea { anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton; ToolTip.visible: containsMouse; ToolTip.text: delegateItem.errors; ToolTip.delay: 300 }
+                            }
                         }
                     }
                 }
@@ -1578,8 +1672,16 @@ ApplicationWindow {
                 // Scan above and below, skipping the dragged item itself
                 var targetFolderId = ""
 
+                // If dropped below all items (in the footer zone), always remove from folder
+                var effectiveCount = 0
+                for (var ec = 0; ec < _inactiveProxyModel.count; ec++) {
+                    var ecItem = _inactiveProxyModel.get(ec)
+                    if (ecItem.uuid !== uuid) effectiveCount = ec + 1
+                }
+                var droppedBelowAll = insertLine >= effectiveCount
+
                 // Scan upward from insert line to find folder context
-                for (var sa = insertLine - 1; sa >= 0; sa--) {
+                for (var sa = insertLine - 1; !droppedBelowAll && sa >= 0; sa--) {
                     var aboveItem = _inactiveProxyModel.get(sa)
                     if (aboveItem.itemType === "mod" && aboveItem.uuid === uuid) continue  // skip self
                     if (aboveItem.itemType === "mod" && aboveItem.folderId !== "") {
@@ -1591,7 +1693,7 @@ ApplicationWindow {
                     break  // uncategorized mod above = not in a folder
                 }
                 // If above is uncategorized or empty, check below
-                if (targetFolderId === "") {
+                if (targetFolderId === "" && !droppedBelowAll) {
                     for (var sb = insertLine; sb < _inactiveProxyModel.count; sb++) {
                         var belowItem = _inactiveProxyModel.get(sb)
                         if (belowItem.itemType === "mod" && belowItem.uuid === uuid) continue  // skip self
@@ -2070,6 +2172,11 @@ ApplicationWindow {
         // Restore theme
         Theme.mode = themeSettings.mode || "light"
         Theme.scheme = themeSettings.scheme || "default"
+        // Restore custom background
+        if (settings && settings.customBackground) {
+            Theme.customBackground = "file:///" + settings.customBackground
+            Theme.panelOpacity = settings.panelOpacity
+        }
         _loadFolderState()
         _loadModNotes()
         _rebuildInactiveProxy()

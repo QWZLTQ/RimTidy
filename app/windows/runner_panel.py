@@ -318,7 +318,8 @@ class RunnerPanel(QWidget):
 
         # Display command being executed (unless in dry run mode)
         if not self.todds_dry_run_support:
-            self.message(f"\nExecuting command:\n{command} {' '.join(args)}\n\n")
+            exec_label = getattr(self, "_i18n_exec_cmd_fmt", None) or self.tr("Executing command:")
+            self.message(f"\n{exec_label}\n{command} {' '.join(args)}\n\n")
 
         # Start the process
         self.process.start()
@@ -482,7 +483,9 @@ class RunnerPanel(QWidget):
         # Skip detailed output in dry run mode
         if not self.todds_dry_run_support:
             # Show completion status
-            status_message = "Subprocess killed!" if self.process_killed else "Subprocess completed."
+            killed_text = getattr(self, "_i18n_subprocess_killed", None) or self.tr("Subprocess killed!")
+            completed_text = getattr(self, "_i18n_subprocess_completed", None) or self.tr("Subprocess completed.")
+            status_message = killed_text if self.process_killed else completed_text
             self.message(status_message)
             self.process_killed = False  # Reset the kill flag
 
@@ -588,9 +591,9 @@ class RunnerPanel(QWidget):
             self.exit_window()
         else:
             diag = BinaryChoiceDialog(
-                title=self.tr("Process Complete"),
-                text=self.tr("Process complete, you can close the window."),
-                positive_text=self.tr("Close Window"),
+                title=getattr(self, "_i18n_process_complete_title", None) or self.tr("Process Complete"),
+                text=getattr(self, "_i18n_process_complete_text", None) or self.tr("Process complete, you can close the window."),
+                positive_text=getattr(self, "_i18n_close_window", None) or self.tr("Close Window"),
                 negative_text=self.tr("Ok"),
             )
             if diag.exec_is_positive():

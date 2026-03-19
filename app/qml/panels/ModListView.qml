@@ -7,8 +7,8 @@ import "../delegates"
 Rectangle {
     id: listContainer
     radius: Theme.borderRadius
-    color: Theme.card
-    border.color: Theme.border
+    color: Qt.rgba(Theme.card.r, Theme.card.g, Theme.card.b, Theme.panelOpacity)
+    border.color: Qt.rgba(Theme.border.r, Theme.border.g, Theme.border.b, Theme.panelOpacity)
     border.width: 1
 
     property string title: "Mods"

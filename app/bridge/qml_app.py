@@ -80,6 +80,8 @@ def launch_qml_app() -> int:
     engine.rootContext().setContextProperty("contextMenu", context_menu_bridge)
     engine.rootContext().setContextProperty("i18n", i18n)
     context_menu_bridge.statusMessage.connect(status_bridge.setMessage)
+    menu_actions.set_i18n(i18n)
+    app_bridge.set_i18n(i18n)
     menu_actions.statusMessage.connect(status_bridge.setMessage)
 
     def on_menu_mod_lists_changed() -> None:
@@ -177,6 +179,15 @@ def launch_qml_app() -> int:
                     settings_bridge.configFolder = inst.config_folder or ""
                     settings_bridge.steamModsFolder = inst.workshop_folder or ""
                     settings_bridge.localModsFolder = inst.local_folder or ""
+                # Sync todds settings
+                settings_bridge.toddsPreset = s.todds_preset
+                settings_bridge.toddsCustomCommand = s.todds_custom_command
+                settings_bridge.toddsActiveModsTarget = s.todds_active_mods_target
+                settings_bridge.toddsDryRun = s.todds_dry_run
+                settings_bridge.toddsOverwrite = s.todds_overwrite
+                # Sync custom background settings
+                settings_bridge.customBackground = getattr(s, "custom_background", "")
+                settings_bridge.panelOpacity = getattr(s, "panel_opacity", 1.0)
 
     QTimer.singleShot(100, deferred_init)
 

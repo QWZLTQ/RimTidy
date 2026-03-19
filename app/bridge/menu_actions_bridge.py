@@ -19,6 +19,17 @@ class MenuActionsBridge(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
+        self._i18n: object | None = None
+
+    def set_i18n(self, i18n: object) -> None:
+        """Set the I18nBridge instance for translations."""
+        self._i18n = i18n
+
+    def _tr(self, key: str) -> str:
+        """Translate using the i18n dictionary, falling back to the key itself."""
+        if self._i18n is not None and hasattr(self._i18n, "t"):
+            return self._i18n.t(key)  # type: ignore[union-attr]
+        return key
 
     def _settings(self):  # type: ignore[no-untyped-def]
         from app.models.settings import Settings
@@ -436,36 +447,260 @@ class MenuActionsBridge(QObject):
 
     # ========== Textures menu ==========
 
-    @Slot()
-    def optimizeTextures(self) -> None:
-        """Run todds texture optimization — same as original _do_optimize_textures."""
+    def _do_generate_todds_txt(self, target: str = "auto") -> str:
+        """Generate todds.txt listing target mod folders.
+
+        Args:
+            target: "active" = active mods only, "inactive" = inactive mods only,
+                    "all" = all mod folders, "auto" = respect settings.
+        """
+        from tempfile import gettempdir
+
+        s = self._settings()
+        inst = s.instances.get(s.current_instance)
+        todds_txt_path = str(Path(gettempdir()) / "todds.txt")
+
+        if os.path.exists(todds_txt_path):
+            os.remove(todds_txt_path)
+
+        # Resolve "auto" to the setting value
+        if target == "auto":
+            target = "active" if s.todds_active_mods_target else "all"
+
+        if target == "all":
+            # Write entire local + workshop folders
+            with open(todds_txt_path, "a", encoding="utf-8") as f:
+                if inst and inst.local_folder and inst.local_folder != "":
+                    f.write(os.path.abspath(inst.local_folder) + "\n")
+                if inst and inst.workshop_folder and inst.workshop_folder != "":
+                    f.write(os.path.abspath(inst.workshop_folder) + "\n")
+        elif target in ("active", "inactive"):
+            from app.utils import metadata as meta_utils
+
+            mm = self._mm()
+            if not inst or not inst.config_folder:
+                logger.warning("No config folder configured, falling back to all mods")
+                with open(todds_txt_path, "a", encoding="utf-8") as f:
+                    if inst and inst.local_folder:
+                        f.write(os.path.abspath(inst.local_folder) + "\n")
+                    if inst and inst.workshop_folder:
+                        f.write(os.path.abspath(inst.workshop_folder) + "\n")
+            else:
+                config_path = str(Path(inst.config_folder) / "ModsConfig.xml")
+                active_uuids, _, _, _ = meta_utils.get_mods_from_list(config_path)
+                active_uuid_set = set(active_uuids)
+                all_uuids = set(mm.internal_local_metadata.keys())
+
+                if target == "active":
+                    selected_uuids = active_uuid_set
+                else:  # inactive
+                    selected_uuids = all_uuids - active_uuid_set
+
+                with open(todds_txt_path, "a", encoding="utf-8") as f:
+                    for uuid in selected_uuids:
+                        meta = mm.internal_local_metadata.get(uuid, {})
+                        mod_path = meta.get("path")
+                        if mod_path:
+                            f.write(os.path.abspath(mod_path) + "\n")
+
+        logger.info(f"Generated todds.txt at: {todds_txt_path} (target={target})")
+        return todds_txt_path
+
+    def _create_todds_runner(self, is_pre_launch: bool) -> "RunnerPanel":
+        """Create and configure the todds runner UI panel — mirrors main_content_panel."""
+        from app.windows.runner_panel import RunnerPanel
+
+        s = self._settings()
+        runner = RunnerPanel(
+            todds_dry_run_support=s.todds_dry_run,
+            auto_close_on_complete=is_pre_launch,
+        )
+
+        base_title = self._tr("RimTidy - todds Texture Encoder")
+        suffix = self._tr(" (pre-launch)") if is_pre_launch else ""
+        runner.setWindowTitle(f"{base_title}{suffix}")
+
+        # Patch RunnerPanel text for Chinese localization
+        # (RunnerPanel uses Qt tr() which has no .qm loaded in QML mode)
+        runner._i18n_subprocess_killed = self._tr("Subprocess killed!")
+        runner._i18n_subprocess_completed = self._tr("Subprocess completed.")
+        runner._i18n_process_complete_title = self._tr("Process Complete")
+        runner._i18n_process_complete_text = self._tr("Process complete, you can close the window.")
+        runner._i18n_close_window = self._tr("Close Window")
+        runner._i18n_initiating = self._tr("Initiating todds...")
+        runner._i18n_courtesy = self._tr("Courtesy of joseasoler#1824")
+        runner._i18n_preset_fmt = self._tr("Using configured preset: {preset}")
+        runner._i18n_exec_cmd_fmt = self._tr("Executing command:")
+
+        if not is_pre_launch:
+            self._todds_runner = runner  # prevent GC
+
+        runner.show()
+        return runner
+
+    def _run_todds_optimize(self, target: str) -> None:
+        """Shared todds optimization logic for different targets."""
         try:
+            from app.utils.todds.wrapper import ToddsInterface
+
             s = self._settings()
-            todds_active_mods_target = getattr(s, "todds_active_mods_target", False)
-            todds_dry_run = getattr(s, "todds_dry_run", False)
-            todds_overwrite = getattr(s, "todds_overwrite", False)
-            self.statusMessage.emit("todds: configure in Settings → todds tab")
+            logger.info(f"Optimizing textures with todds (target={target})...")
+
+            todds_interface = ToddsInterface(
+                preset=s.todds_preset,
+                dry_run=s.todds_dry_run,
+                overwrite=s.todds_overwrite,
+            )
+
+            todds_runner = self._create_todds_runner(is_pre_launch=False)
+            todds_txt_path = self._do_generate_todds_txt(target=target)
+
+            todds_interface.execute_todds_cmd(todds_txt_path, todds_runner)
+            self.statusMessage.emit(self._tr("todds optimization started"))
         except Exception as e:
             logger.error(f"Optimize textures failed: {e}")
+            self.statusMessage.emit(f"{self._tr('Optimize textures failed')}: {e}")
+
+    @Slot()
+    def optimizeTextures(self) -> None:
+        """Run todds optimization respecting settings target."""
+        self._run_todds_optimize("auto")
+
+    @Slot()
+    def optimizeActiveModsTextures(self) -> None:
+        """Run todds optimization on active mods only."""
+        self._run_todds_optimize("active")
+
+    @Slot()
+    def optimizeInactiveModsTextures(self) -> None:
+        """Run todds optimization on inactive mods only."""
+        self._run_todds_optimize("inactive")
+
+    @Slot()
+    def optimizeAllModsTextures(self) -> None:
+        """Run todds optimization on all mods."""
+        self._run_todds_optimize("all")
 
     @Slot()
     def deleteDdsTextures(self) -> None:
-        """Delete orphaned .dds textures — same as original _do_delete_dds_textures."""
+        """Delete .dds textures using todds clean preset — mirrors main_content_panel._do_delete_dds_textures."""
         try:
             from PySide6.QtWidgets import QMessageBox
-            reply = QMessageBox.question(None, "Delete DDS Textures",
-                "Delete all orphaned .dds texture files?\nThis cannot be undone.")
-            if reply == QMessageBox.StandardButton.Yes:
-                from app.utils.dds_utility import DDSUtility
-                s = self._settings()
-                from app.controllers.settings_controller import SettingsController
-                from app.views.settings_dialog import SettingsDialog
-                sc = SettingsController(model=s, view=SettingsDialog())
-                dds = DDSUtility(sc)
-                count = dds.delete_dds_files_without_png()
-                self.statusMessage.emit(f"Deleted {count} orphaned .dds files")
+            from app.utils.todds.wrapper import ToddsInterface
+
+            reply = QMessageBox.question(
+                None,
+                self._tr("Delete DDS Textures"),
+                self._tr("Delete all .dds texture files?\nThis cannot be undone."),
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            s = self._settings()
+            logger.info("Deleting .dds textures with todds...")
+
+            todds_interface = ToddsInterface(
+                preset="clean",
+                dry_run=s.todds_dry_run,
+            )
+
+            todds_runner = self._create_todds_runner(is_pre_launch=False)
+            todds_txt_path = self._do_generate_todds_txt()
+
+            todds_interface.execute_todds_cmd(todds_txt_path, todds_runner)
+            self.statusMessage.emit(self._tr("todds clean started"))
         except Exception as e:
             logger.error(f"Delete DDS failed: {e}")
+            self.statusMessage.emit(f"{self._tr('Delete DDS failed')}: {e}")
+
+    @Slot()
+    def deleteGeneratedDdsOnly(self) -> None:
+        """Delete only generated .dds files (those with a corresponding .png source)."""
+        try:
+            from glob import glob
+
+            from PySide6.QtWidgets import QMessageBox
+
+            reply = QMessageBox.question(
+                None,
+                self._tr("Delete Generated DDS"),
+                self._tr(
+                    "Delete .dds files that have a corresponding .png source?\n"
+                    "This only removes DDS files generated by optimization,\n"
+                    "mod-original DDS files (without .png) will be kept."
+                ),
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+
+            s = self._settings()
+            inst = s.instances.get(s.current_instance)
+            if not inst:
+                self.statusMessage.emit(self._tr("No instance configured"))
+                return
+
+            # Collect mod folders to scan
+            folders = []
+            if inst.local_folder and os.path.exists(inst.local_folder):
+                folders.append(inst.local_folder)
+            if inst.workshop_folder and os.path.exists(inst.workshop_folder):
+                folders.append(inst.workshop_folder)
+
+            # Find and delete DDS files that have a corresponding PNG
+            deleted_count = 0
+            scanned_count = 0
+            failed_files: list[str] = []
+            for folder in folders:
+                for dds_file in glob(
+                    os.path.join(folder, "**", "*.dds"), recursive=True
+                ):
+                    scanned_count += 1
+                    png_file = dds_file.replace(".dds", ".png")
+                    if os.path.exists(png_file):
+                        try:
+                            os.remove(dds_file)
+                            deleted_count += 1
+                        except OSError as e:
+                            logger.error(f"Failed to delete {dds_file}: {e}")
+                            failed_files.append(str(dds_file))
+
+            logger.info(
+                f"Deleted {deleted_count} generated DDS files (with PNG source)"
+            )
+
+            # Show completion dialog
+            if failed_files:
+                QMessageBox.warning(
+                    None,
+                    self._tr("Delete Complete (with errors)"),
+                    self._tr(
+                        "Scanned {scanned} .dds files.\n"
+                        "Deleted {deleted} generated .dds files.\n"
+                        "Failed to delete {failed} files."
+                    ).format(
+                        scanned=scanned_count,
+                        deleted=deleted_count,
+                        failed=len(failed_files),
+                    ),
+                )
+            else:
+                QMessageBox.information(
+                    None,
+                    self._tr("Delete Complete"),
+                    self._tr(
+                        "Scanned {scanned} .dds files.\n"
+                        "Deleted {deleted} generated .dds files.\n"
+                        "Mod-original .dds files (without .png) were kept."
+                    ).format(scanned=scanned_count, deleted=deleted_count),
+                )
+            self.statusMessage.emit(
+                self._tr("Deleted {deleted} generated .dds files").format(
+                    deleted=deleted_count
+                )
+            )
+        except Exception as e:
+            logger.error(f"Delete generated DDS failed: {e}")
+            self.statusMessage.emit(f"Delete generated DDS failed: {e}")
 
     # ========== Help menu ==========
 

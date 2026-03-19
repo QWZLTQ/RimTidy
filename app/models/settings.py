@@ -135,6 +135,8 @@ class Settings(QObject):
 
         self.font_family: str = QApplication.font().family()
         self.font_size: int = 12
+        self.custom_background: str = ""
+        self.panel_opacity: float = 1.0
 
         # Language
         self.language = "en_US"

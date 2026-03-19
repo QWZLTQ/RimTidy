@@ -31,6 +31,15 @@ class SettingsBridge(QObject):
         self._sort_method = "Topological"
         self._enable_mod_type_filter = True
         self._show_save_indicators = False
+        # todds settings
+        self._todds_preset = "optimized"
+        self._todds_custom_command = ""
+        self._todds_active_mods_target = True
+        self._todds_dry_run = False
+        self._todds_overwrite = False
+        # Custom background settings
+        self._custom_background = ""
+        self._panel_opacity = 1.0
 
     # --- Dialog visibility ---
     visibleChanged = Signal()
@@ -177,6 +186,87 @@ class SettingsBridge(QObject):
         self._show_save_indicators = val
         self.settingsChanged.emit()
 
+    # --- todds settings ---
+    @Property(str, notify=settingsChanged)
+    def toddsPreset(self) -> str:
+        return self._todds_preset
+
+    @toddsPreset.setter  # type: ignore[no-redef]
+    def toddsPreset(self, val: str) -> None:
+        self._todds_preset = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def toddsCustomCommand(self) -> str:
+        return self._todds_custom_command
+
+    @toddsCustomCommand.setter  # type: ignore[no-redef]
+    def toddsCustomCommand(self, val: str) -> None:
+        self._todds_custom_command = val
+        self.settingsChanged.emit()
+
+    @Property(bool, notify=settingsChanged)
+    def toddsActiveModsTarget(self) -> bool:
+        return self._todds_active_mods_target
+
+    @toddsActiveModsTarget.setter  # type: ignore[no-redef]
+    def toddsActiveModsTarget(self, val: bool) -> None:
+        self._todds_active_mods_target = val
+        self.settingsChanged.emit()
+
+    @Property(bool, notify=settingsChanged)
+    def toddsDryRun(self) -> bool:
+        return self._todds_dry_run
+
+    @toddsDryRun.setter  # type: ignore[no-redef]
+    def toddsDryRun(self, val: bool) -> None:
+        self._todds_dry_run = val
+        self.settingsChanged.emit()
+
+    @Property(bool, notify=settingsChanged)
+    def toddsOverwrite(self) -> bool:
+        return self._todds_overwrite
+
+    @toddsOverwrite.setter  # type: ignore[no-redef]
+    def toddsOverwrite(self, val: bool) -> None:
+        self._todds_overwrite = val
+        self.settingsChanged.emit()
+
+    # --- Custom background settings ---
+    @Property(str, notify=settingsChanged)
+    def customBackground(self) -> str:
+        return self._custom_background
+
+    @customBackground.setter  # type: ignore[no-redef]
+    def customBackground(self, val: str) -> None:
+        self._custom_background = val
+        self.settingsChanged.emit()
+
+    @Property(float, notify=settingsChanged)
+    def panelOpacity(self) -> float:
+        return self._panel_opacity
+
+    @panelOpacity.setter  # type: ignore[no-redef]
+    def panelOpacity(self, val: float) -> None:
+        self._panel_opacity = val
+        self.settingsChanged.emit()
+
+    @Slot(result=str)
+    def pickBackgroundImage(self) -> str:
+        """Open a native file dialog to pick a background image."""
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getOpenFileName(
+            None,
+            "Select Background Image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp);;All Files (*)",
+        )
+        if path:
+            self._custom_background = path.replace("\\", "/")
+            self.settingsChanged.emit()
+        return self._custom_background
+
     # --- Actions ---
     @Slot()
     def save(self) -> None:
@@ -210,6 +300,17 @@ class SettingsBridge(QObject):
             if self._font_family:
                 s.font_family = self._font_family
 
+            # Custom background settings
+            s.custom_background = self._custom_background
+            s.panel_opacity = self._panel_opacity
+
+            # todds settings
+            s.todds_preset = self._todds_preset
+            s.todds_custom_command = self._todds_custom_command
+            s.todds_active_mods_target = self._todds_active_mods_target
+            s.todds_dry_run = self._todds_dry_run
+            s.todds_overwrite = self._todds_overwrite
+
             s.save()
             logger.info("Settings saved successfully")
         except Exception as e:
@@ -242,6 +343,13 @@ class SettingsBridge(QObject):
             self._font_size = 13
             self._font_family = "Segoe UI"
             self._steam_client_integration = False
+            self._custom_background = ""
+            self._panel_opacity = 1.0
+            self._todds_preset = "optimized"
+            self._todds_custom_command = ""
+            self._todds_active_mods_target = True
+            self._todds_dry_run = False
+            self._todds_overwrite = False
             self.settingsChanged.emit()
             logger.info("Settings reset to defaults")
         except Exception as e:

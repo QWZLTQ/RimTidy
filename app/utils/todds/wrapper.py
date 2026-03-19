@@ -121,9 +121,12 @@ class ToddsInterface:
                 args.append(os.path.abspath(target_path))
 
             if not runner.todds_dry_run_support:
-                runner.message("Initiating todds...")
-                runner.message("Courtesy of joseasoler#1824")
-                runner.message(f"Using configured preset: {self.preset}\n\n")
+                initiating = getattr(runner, "_i18n_initiating", None) or QCoreApplication.translate("ToddsInterface", "Initiating todds...")
+                courtesy = getattr(runner, "_i18n_courtesy", None) or QCoreApplication.translate("ToddsInterface", "Courtesy of joseasoler#1824")
+                preset_fmt = getattr(runner, "_i18n_preset_fmt", None) or QCoreApplication.translate("ToddsInterface", "Using configured preset: {preset}")
+                runner.message(initiating)
+                runner.message(courtesy)
+                runner.message(preset_fmt.format(preset=self.preset) + "\n\n")
             runner.execute(todds_exe_path, args, -1)
             logger.warning(f"Executing todds with arguments: {args} in {self.cwd}")
         else:

@@ -25,10 +25,21 @@ class AppBridge(QObject):
         self._settings_controller = None
         self._metadata_manager = None
         self._initialized = False
+        self._i18n: object | None = None
         # Restore state (same as original _do_restore)
         self._active_restore: list[str] = []
         self._inactive_restore: list[str] = []
         self._active_last_save: list[str] = []
+
+    def set_i18n(self, i18n: object) -> None:
+        """Set the I18nBridge instance for translations."""
+        self._i18n = i18n
+
+    def _tr(self, key: str) -> str:
+        """Translate using the i18n dictionary, falling back to the key itself."""
+        if self._i18n is not None and hasattr(self._i18n, "t"):
+            return self._i18n.t(key)  # type: ignore[union-attr]
+        return key
 
     # ---- Initialization (mirrors AppController) ----
 
@@ -306,12 +317,14 @@ class AppBridge(QObject):
     def getModErrorsWarnings(self, uuids: list[str], list_type: str = "Active") -> dict[str, dict[str, str]]:
         """
         Compute errors/warnings for mod UUIDs.
-        Replicates original recalculate_internal_errors_warnings logic:
+        Mirrors original recalculate_internal_errors_warnings logic:
+        - Invalid mod (both lists)
+        - Version mismatch (both lists)
         - Missing dependencies (Active list only)
+        - Alternative dependencies (Active list only, if setting enabled)
         - Incompatibilities (Active list only)
         - Load order violations (Active list only)
-        - Version mismatch (both lists)
-        - Invalid mod (both lists)
+        - Use This Instead / recommended alternative (both lists)
         """
         if not self._metadata_manager:
             return {}
@@ -327,6 +340,22 @@ class AppBridge(QObject):
                 packageid_to_uuid[pid] = uuid
         package_ids_set = set(packageid_to_uuid.keys())
 
+        # Check settings
+        consider_alternatives = False
+        if self._settings:
+            consider_alternatives = getattr(
+                self._settings, "use_alternative_package_ids_as_satisfying_dependencies", False
+            )
+
+        # Steam DB name lookup helper
+        steamdb_name = getattr(mm, "steamdb_packageid_to_name", {})
+
+        def _resolve_name(pid: str) -> str:
+            """Resolve package ID to mod name via local metadata or Steam DB."""
+            return all_meta.get(packageid_to_uuid.get(pid, ""), {}).get(
+                "name", steamdb_name.get(pid, pid)
+            )
+
         result: dict[str, dict[str, str]] = {}
         total_errors = 0
         total_warnings = 0
@@ -339,50 +368,80 @@ class AppBridge(QObject):
             error_parts: list[str] = []
             warning_parts: list[str] = []
 
-            # Invalid mod
+            # ── Invalid mod (both lists) ──
             if meta.get("invalid"):
-                error_parts.append("Invalid mod (missing or malformed About.xml)")
+                error_parts.append(self._tr("Invalid mod (missing or malformed About.xml)"))
 
-            # Version mismatch
+            # ── Version mismatch (both lists) ──
             try:
                 if mm.is_version_mismatch(uuid):
-                    warning_parts.append("Mod and Game Version Mismatch")
+                    warning_parts.append(self._tr("Mod and Game Version Mismatch"))
             except Exception:
                 pass
 
-            # Active list only: check dependencies, incompatibilities, load order
+            # ── Active list only checks ──
             if list_type == "Active":
-                # Missing dependencies (same as original _check_missing_dependencies)
+                # Missing dependencies + alternative dependencies
+                missing_deps: set[str] = set()
+                alternative_deps: set[str] = set()
                 deps = meta.get("dependencies", [])
                 if deps and isinstance(deps, (list, set)):
                     for dep_entry in deps:
+                        alt_ids: set[str] = set()
                         if isinstance(dep_entry, tuple):
                             dep_id = dep_entry[0]
+                            if (
+                                len(dep_entry) > 1
+                                and isinstance(dep_entry[1], dict)
+                                and isinstance(dep_entry[1].get("alternatives"), set)
+                            ):
+                                alt_ids = dep_entry[1]["alternatives"]
                         elif isinstance(dep_entry, str):
                             dep_id = dep_entry
                         else:
                             continue
-                        if dep_id and dep_id not in package_ids_set:
-                            name = all_meta.get(packageid_to_uuid.get(dep_id, ""), {}).get("name", dep_id)
-                            error_parts.append(f"Missing dependency: {name}")
 
-                # Incompatibilities (same as original _check_incompatibilities)
+                        satisfied = dep_id in package_ids_set
+                        if not satisfied and consider_alternatives:
+                            satisfied = any(alt in package_ids_set for alt in alt_ids)
+                        if not satisfied:
+                            missing_deps.add(dep_id)
+                            if consider_alternatives and alt_ids:
+                                alt_candidates = {a for a in alt_ids if a not in package_ids_set}
+                                alternative_deps.update(alt_candidates if alt_candidates else alt_ids)
+
+                if missing_deps:
+                    error_parts.append(self._tr("Missing Dependencies:"))
+                    for dep_id in missing_deps:
+                        error_parts.append(f"  * {_resolve_name(dep_id)}")
+
+                if consider_alternatives and alternative_deps:
+                    warning_parts.append(self._tr("Alternative Dependencies:"))
+                    for alt_id in alternative_deps:
+                        warning_parts.append(f"  * {_resolve_name(alt_id)}")
+
+                # Incompatibilities
                 incomp = meta.get("incompatibilities", [])
+                conflicting: set[str] = set()
                 if incomp and isinstance(incomp, (list, set)):
                     for inc_id in incomp:
                         if isinstance(inc_id, str) and inc_id in package_ids_set:
-                            name = all_meta.get(packageid_to_uuid.get(inc_id, ""), {}).get("name", inc_id)
-                            error_parts.append(f"Incompatible with: {name}")
+                            conflicting.add(inc_id)
+                if conflicting:
+                    error_parts.append(self._tr("Incompatibilities:"))
+                    for inc_id in conflicting:
+                        error_parts.append(f"  * {_resolve_name(inc_id)}")
 
-                # Load order violations (same as original _check_load_order_violations)
+                # Load order violations
+                load_after_names: list[str] = []
+                load_before_names: list[str] = []
                 for lb in meta.get("loadTheseBefore", []):
                     if isinstance(lb, tuple) and len(lb) > 1 and lb[1]:
                         lb_id = lb[0]
                         if lb_id in packageid_to_uuid:
                             lb_uuid = packageid_to_uuid[lb_id]
                             if lb_uuid in uuids and i <= uuids.index(lb_uuid):
-                                name = all_meta.get(lb_uuid, {}).get("name", lb_id)
-                                warning_parts.append(f"Should load after: {name}")
+                                load_after_names.append(_resolve_name(lb_id))
 
                 for la in meta.get("loadTheseAfter", []):
                     if isinstance(la, tuple) and len(la) > 1 and la[1]:
@@ -390,8 +449,27 @@ class AppBridge(QObject):
                         if la_id in packageid_to_uuid:
                             la_uuid = packageid_to_uuid[la_id]
                             if la_uuid in uuids and i >= uuids.index(la_uuid):
-                                name = all_meta.get(la_uuid, {}).get("name", la_id)
-                                warning_parts.append(f"Should load before: {name}")
+                                load_before_names.append(_resolve_name(la_id))
+
+                if load_after_names:
+                    warning_parts.append(self._tr("Should be Loaded After:"))
+                    for name in load_after_names:
+                        warning_parts.append(f"  * {name}")
+                if load_before_names:
+                    warning_parts.append(self._tr("Should be Loaded Before:"))
+                    for name in load_before_names:
+                        warning_parts.append(f"  * {name}")
+
+            # ── Use This Instead / recommended alternative (both lists) ──
+            try:
+                replacement = mm.has_alternative_mod(uuid)
+                if replacement:
+                    alt_info = replacement.name or replacement.packageid or ""
+                    warning_parts.append(
+                        self._tr("Recommended alternative: {alternative}").format(alternative=alt_info)
+                    )
+            except Exception:
+                pass
 
             if error_parts or warning_parts:
                 errors_str = "\n".join(error_parts)
