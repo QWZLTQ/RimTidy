@@ -494,6 +494,15 @@ _ZH_CN: dict[str, str] = {
     "Cleanup": "清理",
     "Remove unnecessary files and data.": "移除不必要的文件和数据。",
     "Danger Zone": "危险区域",
+    # Mod list presets
+    "Save As": "存档",
+    "Load": "读档",
+    "Save Mod List Preset": "保存 Mod 列表存档",
+    "Load Mod List Preset": "加载 Mod 列表存档",
+    "Enter a name for this mod list:": "为此 Mod 列表输入名称：",
+    "e.g. Combat Build": "例如：战斗向配置",
+    "Saved mod lists:": "已保存的 Mod 列表：",
+    "No saved presets yet. Use 'Save As' to create one.": "暂无存档。点击「存档」创建一个。",
 }
 
 
