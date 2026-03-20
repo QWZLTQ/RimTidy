@@ -1084,6 +1084,8 @@ ApplicationWindow {
                             }
                         }}
                         ActionBtn { text: root.tr("Save"); onClicked: appBridge.saveModList(activeModsModel.getUuids()) }
+                        ActionBtn { text: root.tr("Save As"); onClicked: savePresetDialog.open() }
+                        ActionBtn { text: root.tr("Load"); onClicked: { loadPresetDialog.refreshList(); loadPresetDialog.open() } }
                         ActionBtn { text: root.tr("Run"); accent: true; onClicked: appBridge.runGame() }
                     }
                 }
@@ -1165,11 +1167,16 @@ ApplicationWindow {
 
     function _buildPackageIdToUuidMap() {
         var map = {}
-        if (!inactiveModsModel) return map
-        var allUuids = inactiveModsModel.getUuids()
-        for (var i = 0; i < allUuids.length; i++) {
-            var pid = inactiveModsModel.data(inactiveModsModel.index(i, 0), _R_PackageId) || ""
-            if (pid !== "") map[pid] = allUuids[i]
+        // Include both inactive and active mods so memory survives restart
+        // when a mod is currently in the active list
+        var models = [inactiveModsModel, activeModsModel]
+        for (var m = 0; m < models.length; m++) {
+            if (!models[m]) continue
+            var allUuids = models[m].getUuids()
+            for (var i = 0; i < allUuids.length; i++) {
+                var pid = models[m].data(models[m].index(i, 0), _R_PackageId) || ""
+                if (pid !== "" && !map[pid]) map[pid] = allUuids[i]
+            }
         }
         return map
     }
@@ -2313,6 +2320,149 @@ ApplicationWindow {
             highlighted: scb.highlightedIndex === index
         }
     }
+
+    // ---- Save Preset Dialog ----
+    Dialog {
+        id: savePresetDialog
+        title: root.tr("Save Mod List Preset")
+        anchors.centerIn: parent
+        width: 360; modal: true
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: {
+            var name = presetNameInput.text.trim()
+            if (name) {
+                appBridge.saveModListPreset(name, activeModsModel.getUuids())
+                presetNameInput.text = ""
+            }
+        }
+        onOpened: { presetNameInput.text = ""; presetNameInput.forceActiveFocus() }
+
+        contentItem: ColumnLayout {
+            spacing: 12
+            Text {
+                text: root.tr("Enter a name for this mod list:")
+                color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize
+            }
+            TextField {
+                id: presetNameInput
+                Layout.fillWidth: true
+                placeholderText: root.tr("e.g. Combat Build")
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize
+                Keys.onReturnPressed: savePresetDialog.accept()
+            }
+        }
+    }
+
+    // ---- Load Preset Dialog ----
+    Dialog {
+        id: loadPresetDialog
+        title: root.tr("Load Mod List Preset")
+        anchors.centerIn: parent
+        width: 420; height: 400; modal: true
+        standardButtons: Dialog.Close
+
+        function refreshList() {
+            presetListModel.clear()
+            var presets = appBridge.listModListPresets()
+            for (var i = 0; i < presets.length; i++) {
+                presetListModel.append(presets[i])
+            }
+        }
+
+        contentItem: ColumnLayout {
+            spacing: 8
+
+            Text {
+                text: root.tr("Saved mod lists:")
+                color: Theme.textPrimary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize
+                visible: presetListModel.count > 0
+            }
+            Text {
+                text: root.tr("No saved presets yet. Use 'Save As' to create one.")
+                color: Theme.textTertiary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize
+                visible: presetListModel.count === 0
+            }
+
+            ListView {
+                Layout.fillWidth: true; Layout.fillHeight: true
+                clip: true; model: presetListModel
+                spacing: 4
+
+                delegate: Rectangle {
+                    width: ListView.view.width; height: 56; radius: 6
+                    color: presetMa.containsMouse ? Theme.hover : Theme.card
+                    border.color: Theme.border; border.width: 1
+                    Behavior on color { ColorAnimation { duration: 80 } }
+
+                    required property int index
+                    required property string name
+                    required property string created
+                    required property string count
+
+                    MouseArea {
+                        id: presetMa; anchors.fill: parent; hoverEnabled: true
+                        onClicked: {
+                            var uuids = appBridge.loadModListPreset(name)
+                            if (uuids.length > 0) {
+                                // Compute inactive = all mods minus the loaded active set
+                                var activeSet = {}
+                                for (var ai = 0; ai < uuids.length; ai++) activeSet[uuids[ai]] = true
+                                var allMods = activeModsModel.getUuids().concat(inactiveModsModel.getUuids())
+                                var inactive = []
+                                var seen = {}
+                                for (var ii = 0; ii < allMods.length; ii++) {
+                                    if (!activeSet[allMods[ii]] && !seen[allMods[ii]]) {
+                                        inactive.push(allMods[ii])
+                                        seen[allMods[ii]] = true
+                                    }
+                                }
+                                activeModsModel.populate(uuids)
+                                inactiveModsModel.populate(inactive)
+                                _rebuildInactiveProxy()
+                                root.refreshErrorsWarnings()
+                                loadPresetDialog.close()
+                            }
+                        }
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent; anchors.margins: 10; spacing: 8
+                        ColumnLayout {
+                            Layout.fillWidth: true; spacing: 2
+                            Text {
+                                text: name
+                                color: Theme.textPrimary; font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSize; font.weight: Font.DemiBold
+                            }
+                            Text {
+                                text: count + " mods  |  " + created
+                                color: Theme.textTertiary; font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontSizeSmall
+                            }
+                        }
+                        // Delete button
+                        Rectangle {
+                            width: 28; height: 28; radius: 4
+                            color: delMa.containsMouse ? Theme.danger : "transparent"
+                            Text {
+                                anchors.centerIn: parent; text: "\u2715"
+                                color: delMa.containsMouse ? "white" : Theme.textTertiary
+                                font.pixelSize: 14
+                            }
+                            MouseArea {
+                                id: delMa; anchors.fill: parent; hoverEnabled: true
+                                onClicked: {
+                                    appBridge.deleteModListPreset(name)
+                                    loadPresetDialog.refreshList()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    ListModel { id: presetListModel }
 
     Component.onCompleted: {
         if (typeof dwmHelper !== 'undefined') dwmHelper.applyRoundedCorners(root)

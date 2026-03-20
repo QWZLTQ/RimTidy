@@ -266,6 +266,116 @@ class AppBridge(QObject):
             return {"active": self._active_restore, "inactive": self._inactive_restore}
         return {"active": [], "inactive": []}
 
+    # ---- Mod list presets (save/load/delete) ----
+
+    def _presets_folder(self) -> Path:
+        from app.utils.app_info import AppInfo
+        return AppInfo().saved_modlists_folder
+
+    @Slot(str, "QVariant", result=bool)
+    def saveModListPreset(self, name: str, active_uuids: list[str]) -> bool:
+        """Save current active mod list as a named preset (using packageIds for persistence)."""
+        import json
+        from datetime import datetime
+        try:
+            if not self._metadata_manager:
+                return False
+            mm = self._metadata_manager
+            # Convert UUIDs to packageIds (stable across restarts)
+            package_ids: list[str] = []
+            for uuid in active_uuids:
+                meta = mm.internal_local_metadata.get(uuid)
+                if meta:
+                    pid = meta.get("packageid", "")
+                    if pid and pid not in package_ids:
+                        package_ids.append(pid)
+            data = {
+                "name": name,
+                "created": datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "package_ids": package_ids,
+            }
+            path = self._presets_folder() / f"{name}.json"
+            path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            self.statusMessage.emit(f"Preset '{name}' saved ({len(package_ids)} mods)")
+            logger.info(f"Saved mod list preset: {name} ({len(package_ids)} mods)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save preset: {e}")
+            self.statusMessage.emit(f"Save preset error: {e}")
+            return False
+
+    @Slot(result="QVariant")
+    def listModListPresets(self) -> list[dict[str, str]]:
+        """List all saved presets. Returns [{name, created, count}, ...]."""
+        import json
+        presets: list[dict[str, str]] = []
+        folder = self._presets_folder()
+        for f in sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+            try:
+                data = json.loads(f.read_text(encoding="utf-8"))
+                count = len(data.get("package_ids", data.get("active_uuids", [])))
+                presets.append({
+                    "name": data.get("name", f.stem),
+                    "created": data.get("created", ""),
+                    "count": str(count),
+                })
+            except Exception:
+                continue
+        return presets
+
+    @Slot(str, result="QVariant")
+    def loadModListPreset(self, name: str) -> list[str]:
+        """Load a preset by name. Returns active UUID list resolved from packageIds."""
+        import json
+        try:
+            path = self._presets_folder() / f"{name}.json"
+            if not path.exists():
+                self.statusMessage.emit(f"Preset '{name}' not found")
+                return []
+            data = json.loads(path.read_text(encoding="utf-8"))
+            package_ids = data.get("package_ids", [])
+            if not package_ids:
+                # Backwards compat: old format with UUIDs
+                uuids = data.get("active_uuids", [])
+                self.statusMessage.emit(f"Loaded preset '{name}' ({len(uuids)} mods)")
+                return uuids
+            # Resolve packageIds → UUIDs
+            if not self._metadata_manager:
+                return []
+            mm = self._metadata_manager
+            pid_to_uuid: dict[str, str] = {}
+            for uuid, meta in mm.internal_local_metadata.items():
+                pid = meta.get("packageid", "")
+                if pid and pid not in pid_to_uuid:
+                    pid_to_uuid[pid] = uuid
+            uuids = [pid_to_uuid[pid] for pid in package_ids if pid in pid_to_uuid]
+            missing = len(package_ids) - len(uuids)
+            msg = f"Loaded preset '{name}' ({len(uuids)} mods)"
+            if missing > 0:
+                msg += f", {missing} mods not found"
+            self.statusMessage.emit(msg)
+            logger.info(f"Loaded mod list preset: {name} ({len(uuids)} mods, {missing} missing)")
+            return uuids
+        except Exception as e:
+            logger.error(f"Failed to load preset: {e}")
+            self.statusMessage.emit(f"Load preset error: {e}")
+            return []
+
+    @Slot(str, result=bool)
+    def deleteModListPreset(self, name: str) -> bool:
+        """Delete a saved preset."""
+        try:
+            path = self._presets_folder() / f"{name}.json"
+            if path.exists():
+                path.unlink()
+                self.statusMessage.emit(f"Preset '{name}' deleted")
+                logger.info(f"Deleted mod list preset: {name}")
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Failed to delete preset: {e}")
+            return False
+
     # ---- Run game (mirrors _do_run_game core logic) ----
 
     @Slot()
