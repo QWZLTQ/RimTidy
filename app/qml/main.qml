@@ -1158,11 +1158,18 @@ ApplicationWindow {
 
     // Convert UUID ↔ packageId for persistence (UUIDs are regenerated each session)
     function _uuidToPackageId(uuid) {
-        if (!inactiveModsModel) return ""
-        var allUuids = inactiveModsModel.getUuids()
-        var idx = allUuids.indexOf(uuid)
-        if (idx < 0) return ""
-        return inactiveModsModel.data(inactiveModsModel.index(idx, 0), _R_PackageId) || ""
+        // Check both models so mods currently in the active list are also resolved
+        var models = [inactiveModsModel, activeModsModel]
+        for (var m = 0; m < models.length; m++) {
+            if (!models[m]) continue
+            var allUuids = models[m].getUuids()
+            var idx = allUuids.indexOf(uuid)
+            if (idx >= 0) {
+                var pid = models[m].data(models[m].index(idx, 0), _R_PackageId) || ""
+                if (pid !== "") return pid
+            }
+        }
+        return ""
     }
 
     function _buildPackageIdToUuidMap() {
@@ -2398,11 +2405,12 @@ ApplicationWindow {
                     required property string name
                     required property string created
                     required property string count
+                    required property string source
 
                     MouseArea {
                         id: presetMa; anchors.fill: parent; hoverEnabled: true
                         onClicked: {
-                            var uuids = appBridge.loadModListPreset(name)
+                            var uuids = appBridge.loadModListPreset(name, source)
                             if (uuids.length > 0) {
                                 // Compute inactive = all mods minus the loaded active set
                                 var activeSet = {}
@@ -2435,13 +2443,14 @@ ApplicationWindow {
                                 font.pixelSize: Theme.fontSize; font.weight: Font.DemiBold
                             }
                             Text {
-                                text: count + " mods  |  " + created
+                                text: count + " mods  |  " + created + (source === "rimworld" ? "  |  RimWorld" : "")
                                 color: Theme.textTertiary; font.family: Theme.fontFamily
                                 font.pixelSize: Theme.fontSizeSmall
                             }
                         }
-                        // Delete button
+                        // Delete button (only for RimTidy presets, not game presets)
                         Rectangle {
+                            visible: source !== "rimworld"
                             width: 28; height: 28; radius: 4
                             color: delMa.containsMouse ? Theme.danger : "transparent"
                             Text {

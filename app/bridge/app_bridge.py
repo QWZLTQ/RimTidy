@@ -272,6 +272,16 @@ class AppBridge(QObject):
         from app.utils.app_info import AppInfo
         return AppInfo().saved_modlists_folder
 
+    def _game_modlists_folder(self) -> Path | None:
+        """Return the RimWorld ModLists folder if it exists."""
+        if not self._settings:
+            return None
+        instance = self._settings.instances.get(self._settings.current_instance)
+        if not instance or not instance.config_folder:
+            return None
+        folder = Path(instance.config_folder).parent / "ModLists"
+        return folder if folder.exists() else None
+
     @Slot(str, "QVariant", result=bool)
     def saveModListPreset(self, name: str, active_uuids: list[str]) -> bool:
         """Save current active mod list as a named preset (using packageIds for persistence)."""
@@ -304,11 +314,26 @@ class AppBridge(QObject):
             self.statusMessage.emit(f"Save preset error: {e}")
             return False
 
+    def _parse_rml_package_ids(self, path: Path) -> list[str]:
+        """Parse a RimWorld .rml mod list file and return package IDs."""
+        import xml.etree.ElementTree as ET
+        try:
+            tree = ET.parse(str(path))
+            root = tree.getroot()
+            ids_elem = root.find(".//modList/ids")
+            if ids_elem is None:
+                return []
+            return [li.text for li in ids_elem.findall("li") if li.text]
+        except Exception:
+            return []
+
     @Slot(result="QVariant")
     def listModListPresets(self) -> list[dict[str, str]]:
-        """List all saved presets. Returns [{name, created, count}, ...]."""
+        """List all saved presets (RimTidy .json + RimWorld .rml)."""
         import json
+        from datetime import datetime
         presets: list[dict[str, str]] = []
+        # RimTidy presets (.json)
         folder = self._presets_folder()
         for f in sorted(folder.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
             try:
@@ -318,37 +343,69 @@ class AppBridge(QObject):
                     "name": data.get("name", f.stem),
                     "created": data.get("created", ""),
                     "count": str(count),
+                    "source": "rimtidy",
                 })
             except Exception:
                 continue
+        # RimWorld game presets (.rml)
+        game_folder = self._game_modlists_folder()
+        if game_folder:
+            for f in sorted(game_folder.glob("*.rml"), key=lambda p: p.stat().st_mtime, reverse=True):
+                try:
+                    pids = self._parse_rml_package_ids(f)
+                    mtime = datetime.fromtimestamp(f.stat().st_mtime).strftime("%Y-%m-%d %H:%M")
+                    presets.append({
+                        "name": f.stem,
+                        "created": mtime,
+                        "count": str(len(pids)),
+                        "source": "rimworld",
+                    })
+                except Exception:
+                    continue
         return presets
 
-    @Slot(str, result="QVariant")
-    def loadModListPreset(self, name: str) -> list[str]:
-        """Load a preset by name. Returns active UUID list resolved from packageIds."""
+    def _resolve_package_ids_to_uuids(self, package_ids: list[str]) -> list[str]:
+        """Resolve a list of packageIds to UUIDs using current metadata."""
+        if not self._metadata_manager:
+            return []
+        mm = self._metadata_manager
+        pid_to_uuid: dict[str, str] = {}
+        for uuid, meta in mm.internal_local_metadata.items():
+            pid = meta.get("packageid", "")
+            if pid and pid not in pid_to_uuid:
+                pid_to_uuid[pid] = uuid
+        return [pid_to_uuid[pid] for pid in package_ids if pid in pid_to_uuid]
+
+    @Slot(str, str, result="QVariant")
+    def loadModListPreset(self, name: str, source: str = "rimtidy") -> list[str]:
+        """Load a preset by name and source. Returns active UUID list."""
         import json
         try:
-            path = self._presets_folder() / f"{name}.json"
-            if not path.exists():
-                self.statusMessage.emit(f"Preset '{name}' not found")
-                return []
-            data = json.loads(path.read_text(encoding="utf-8"))
-            package_ids = data.get("package_ids", [])
-            if not package_ids:
-                # Backwards compat: old format with UUIDs
-                uuids = data.get("active_uuids", [])
-                self.statusMessage.emit(f"Loaded preset '{name}' ({len(uuids)} mods)")
-                return uuids
-            # Resolve packageIds → UUIDs
-            if not self._metadata_manager:
-                return []
-            mm = self._metadata_manager
-            pid_to_uuid: dict[str, str] = {}
-            for uuid, meta in mm.internal_local_metadata.items():
-                pid = meta.get("packageid", "")
-                if pid and pid not in pid_to_uuid:
-                    pid_to_uuid[pid] = uuid
-            uuids = [pid_to_uuid[pid] for pid in package_ids if pid in pid_to_uuid]
+            if source == "rimworld":
+                # Load from RimWorld .rml file
+                game_folder = self._game_modlists_folder()
+                if not game_folder:
+                    return []
+                path = game_folder / f"{name}.rml"
+                if not path.exists():
+                    self.statusMessage.emit(f"RimWorld preset '{name}' not found")
+                    return []
+                package_ids = self._parse_rml_package_ids(path)
+            else:
+                # Load from RimTidy .json file
+                path = self._presets_folder() / f"{name}.json"
+                if not path.exists():
+                    self.statusMessage.emit(f"Preset '{name}' not found")
+                    return []
+                data = json.loads(path.read_text(encoding="utf-8"))
+                package_ids = data.get("package_ids", [])
+                if not package_ids:
+                    # Backwards compat: old format with UUIDs
+                    uuids = data.get("active_uuids", [])
+                    self.statusMessage.emit(f"Loaded preset '{name}' ({len(uuids)} mods)")
+                    return uuids
+
+            uuids = self._resolve_package_ids_to_uuids(package_ids)
             missing = len(package_ids) - len(uuids)
             msg = f"Loaded preset '{name}' ({len(uuids)} mods)"
             if missing > 0:
