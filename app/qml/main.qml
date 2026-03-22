@@ -547,6 +547,40 @@ ApplicationWindow {
                                 property var listModel: inactiveModsModel   // for _finishDrag compat
                                 property var otherModel: activeModsModel
 
+                                // ---- Multi-selection state ----
+                                property var _selection: ({})
+                                property int _selCount: 0
+                                property int _lastClickIdx: -1
+
+                                function _clearSel() { _selection = {}; _selCount = 0; _lastClickIdx = -1 }
+                                function _isSel(u) { return _selection[u] === true }
+                                function _selectOnly(u, idx) {
+                                    var s = {}; s[u] = true; _selection = s; _selCount = 1; _lastClickIdx = idx
+                                }
+                                function _toggleSel(u, idx) {
+                                    var s = Object.assign({}, _selection)
+                                    if (s[u]) { delete s[u] } else { s[u] = true }
+                                    _selection = s; _selCount = Object.keys(s).length; _lastClickIdx = idx
+                                }
+                                function _selectRange(toIdx) {
+                                    var from = _lastClickIdx >= 0 ? _lastClickIdx : toIdx
+                                    var lo = Math.min(from, toIdx), hi = Math.max(from, toIdx)
+                                    var s = Object.assign({}, _selection)
+                                    for (var i = lo; i <= hi; i++) {
+                                        var it = _inactiveProxyModel.get(i)
+                                        if (it && it.itemType === "mod" && it.uuid) s[it.uuid] = true
+                                    }
+                                    _selection = s; _selCount = Object.keys(s).length
+                                }
+                                function _getSelUuids() {
+                                    var r = []
+                                    for (var i = 0; i < _inactiveProxyModel.count; i++) {
+                                        var it = _inactiveProxyModel.get(i)
+                                        if (it && it.itemType === "mod" && _selection[it.uuid]) r.push(it.uuid)
+                                    }
+                                    return r
+                                }
+
                                 MouseArea { id: inactiveCardMa; anchors.fill: parent; hoverEnabled: true; acceptedButtons: Qt.NoButton }
 
                                 ColumnLayout {
@@ -610,15 +644,34 @@ ApplicationWindow {
                                             }
                                         }
 
+                                        Keys.onPressed: function(event) {
+                                            if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
+                                                var s = {}
+                                                for (var i = 0; i < _inactiveProxyModel.count; i++) {
+                                                    var it = _inactiveProxyModel.get(i)
+                                                    if (it && it.itemType === "mod" && it.uuid) s[it.uuid] = true
+                                                }
+                                                inactiveCard._selection = s; inactiveCard._selCount = Object.keys(s).length
+                                                event.accepted = true
+                                            }
+                                        }
                                         Keys.onReturnPressed: {
-                                            if (currentIndex >= 0) {
+                                            if (inactiveCard._selCount > 0) {
+                                                var uuids = inactiveCard._getSelUuids()
+                                                inactiveModsModel.removeByUuids(uuids); activeModsModel.insertUuids(uuids, -1)
+                                                inactiveCard._clearSel(); _rebuildInactiveProxy(); root.refreshErrorsWarnings()
+                                            } else if (currentIndex >= 0) {
                                                 var it = _inactiveProxyModel.get(currentIndex)
                                                 if (it && it.itemType === "mod") transferMod(currentIndex, it.uuid)
                                                 else if (it && it.itemType === "folder") root._toggleFolderExpanded(it.folderId)
                                             }
                                         }
                                         Keys.onSpacePressed: {
-                                            if (currentIndex >= 0) {
+                                            if (inactiveCard._selCount > 0) {
+                                                var uuids2 = inactiveCard._getSelUuids()
+                                                inactiveModsModel.removeByUuids(uuids2); activeModsModel.insertUuids(uuids2, -1)
+                                                inactiveCard._clearSel(); _rebuildInactiveProxy(); root.refreshErrorsWarnings()
+                                            } else if (currentIndex >= 0) {
                                                 var it2 = _inactiveProxyModel.get(currentIndex)
                                                 if (it2 && it2.itemType === "mod") transferMod(currentIndex, it2.uuid)
                                                 else if (it2 && it2.itemType === "folder") root._toggleFolderExpanded(it2.folderId)
@@ -627,8 +680,17 @@ ApplicationWindow {
 
                                         function transferMod(idx, modUuid) {
                                             if (!modUuid) return
-                                            inactiveModsModel.removeByUuids([modUuid])
-                                            activeModsModel.insertUuids([modUuid], -1)
+                                            if (inactiveCard._selCount > 1 && inactiveCard._isSel(modUuid)) {
+                                                var uuids = inactiveCard._getSelUuids()
+                                                inactiveModsModel.removeByUuids(uuids)
+                                                activeModsModel.insertUuids(uuids, -1)
+                                                inactiveCard._clearSel()
+                                            } else {
+                                                inactiveModsModel.removeByUuids([modUuid])
+                                                activeModsModel.insertUuids([modUuid], -1)
+                                                inactiveCard._clearSel()
+                                            }
+                                            _rebuildInactiveProxy()
                                             root.refreshErrorsWarnings()
                                         }
 
@@ -823,7 +885,8 @@ ApplicationWindow {
                                                 radius: 5
                                                 color: {
                                                     if (_dragging && _dragUuid === proxyDelegate.uuid) return Theme.selection
-                                                    if (inactiveLv.currentIndex === proxyDelegate.index) return Theme.selectionActive
+                                                    if (inactiveCard._isSel(proxyDelegate.uuid)) return Theme.selectionActive
+                                                    if (inactiveCard._selCount === 0 && inactiveLv.currentIndex === proxyDelegate.index) return Theme.selectionActive
                                                     if (inactiveModMa.containsMouse) return Theme.hover
                                                     if (proxyDelegate.errors !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D1518" : "#FDE8E8")
                                                     if (proxyDelegate.warnings !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D2E08" : "#FFF8E1")
@@ -837,10 +900,13 @@ ApplicationWindow {
                                                     acceptedButtons: Qt.LeftButton | Qt.RightButton
                                                     property point pressPos: Qt.point(0, 0)
                                                     property bool didDrag: false
+                                                    property int pressModifiers: 0
 
                                                     onPressed: function(mouse) {
                                                         if (mouse.button === Qt.RightButton) {
                                                             inactiveLv.currentIndex = proxyDelegate.index
+                                                            if (!inactiveCard._isSel(proxyDelegate.uuid))
+                                                                inactiveCard._selectOnly(proxyDelegate.uuid, proxyDelegate.index)
                                                             var info = contextMenu.getModMenuInfo(proxyDelegate.uuid)
                                                             inactiveModCtxMenu.targetUuid = proxyDelegate.uuid
                                                             inactiveModCtxMenu.modName = info.name || ""
@@ -851,7 +917,7 @@ ApplicationWindow {
                                                             inactiveModCtxMenu.popup()
                                                             return
                                                         }
-                                                        pressPos = Qt.point(mouse.x, mouse.y); didDrag = false
+                                                        pressPos = Qt.point(mouse.x, mouse.y); pressModifiers = mouse.modifiers; didDrag = false
                                                     }
                                                     onPositionChanged: function(mouse) {
                                                         if (!pressed || mouse.button === Qt.RightButton) return
@@ -859,6 +925,11 @@ ApplicationWindow {
                                                         if (!_dragging && (dx*dx + dy*dy > 100)) {
                                                             _dragging = true; _dragUuid = proxyDelegate.uuid
                                                             _dragName = proxyDelegate.name; _dragSourceList = "inactive"
+                                                            if (inactiveCard._selCount > 1 && inactiveCard._isSel(proxyDelegate.uuid)) {
+                                                                _dragUuids = inactiveCard._getSelUuids()
+                                                            } else {
+                                                                _dragUuids = [proxyDelegate.uuid]
+                                                            }
                                                         }
                                                         if (_dragging) {
                                                             var gp = inactiveModMa.mapToGlobal(mouse.x, mouse.y)
@@ -873,6 +944,13 @@ ApplicationWindow {
                                                             _finishDrag(gp, inactiveCard)
                                                         } else if (!didDrag) {
                                                             inactiveLv.currentIndex = proxyDelegate.index
+                                                            if (pressModifiers & Qt.ControlModifier) {
+                                                                inactiveCard._toggleSel(proxyDelegate.uuid, proxyDelegate.index)
+                                                            } else if (pressModifiers & Qt.ShiftModifier) {
+                                                                inactiveCard._selectRange(proxyDelegate.index)
+                                                            } else {
+                                                                inactiveCard._selectOnly(proxyDelegate.uuid, proxyDelegate.index)
+                                                            }
                                                             if (typeof modInfo !== "undefined" && modInfo) modInfo.displayModInfo(proxyDelegate.uuid)
                                                         }
                                                     }
@@ -929,11 +1007,23 @@ ApplicationWindow {
                                                             MenuItem { text: root.tr("Unsubscribe with Steam"); visible: proxyDelegate.dataSource === "workshop"; height: visible ? implicitHeight : 0; onTriggered: contextMenu.unsubscribeSteamMod(inactiveModCtxMenu.targetUuid) }
                                                         }
                                                         MenuSeparator {}
-                                                        MenuItem { text: root.tr("Activate mod"); onTriggered: inactiveLv.transferMod(proxyDelegate.index, proxyDelegate.uuid) }
+                                                        MenuItem {
+                                                            text: inactiveCard._selCount > 1 ? root.tr("Activate mod") + " (" + inactiveCard._selCount + ")" : root.tr("Activate mod")
+                                                            onTriggered: inactiveLv.transferMod(proxyDelegate.index, proxyDelegate.uuid)
+                                                        }
                                                         MenuSeparator {}
                                                         MenuItem {
-                                                            text: root.tr("Delete mod")
-                                                            onTriggered: { contextMenu.deleteModFolder(inactiveModCtxMenu.targetUuid); inactiveModsModel.removeByUuids([inactiveModCtxMenu.targetUuid]) }
+                                                            text: inactiveCard._selCount > 1 ? root.tr("Delete mod") + " (" + inactiveCard._selCount + ")" : root.tr("Delete mod")
+                                                            onTriggered: {
+                                                                if (inactiveCard._selCount > 1) {
+                                                                    var uuids = inactiveCard._getSelUuids()
+                                                                    for (var i = 0; i < uuids.length; i++) contextMenu.deleteModFolder(uuids[i])
+                                                                    inactiveModsModel.removeByUuids(uuids); inactiveCard._clearSel()
+                                                                } else {
+                                                                    contextMenu.deleteModFolder(inactiveModCtxMenu.targetUuid)
+                                                                    inactiveModsModel.removeByUuids([inactiveModCtxMenu.targetUuid])
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
@@ -1130,6 +1220,7 @@ ApplicationWindow {
     property string _dragSourceList: ""
     property point _dragPos: Qt.point(0, 0)
     property string _dragFolderId: ""  // non-empty when dragging a folder
+    property var _dragUuids: []        // all UUIDs being dragged (for multi-drag)
 
     // Floating ghost label that follows cursor during drag
     Rectangle {
@@ -1137,7 +1228,7 @@ ApplicationWindow {
         x: _dragPos.x + 12; y: _dragPos.y + 4
         width: ghostText.implicitWidth + 20; height: 26; radius: 5
         color: _dragFolderId !== "" ? Theme.mode === "dark" ? "#2A2D32" : "#ECEDF0" : Theme.accent; opacity: 0.85
-        Text { id: ghostText; anchors.centerIn: parent; text: _dragName; color: _dragFolderId !== "" ? Theme.textPrimary : "white"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
+        Text { id: ghostText; anchors.centerIn: parent; text: _dragUuids.length > 1 ? _dragName + " (+" + (_dragUuids.length - 1) + ")" : _dragName; color: _dragFolderId !== "" ? Theme.textPrimary : "white"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall }
     }
 
     // ---- Folder state for inactive mod categorization (QML-only, does not affect Python/mod files) ----
@@ -1340,6 +1431,34 @@ ApplicationWindow {
         property string sourceFilter: "All"
         property bool warningsOnly: false
 
+        // ---- Multi-selection state ----
+        property var _selection: ({})      // uuid → true
+        property int _selCount: 0
+        property int _lastClickIdx: -1
+
+        function _clearSel() { _selection = {}; _selCount = 0; _lastClickIdx = -1 }
+        function _isSel(u) { return _selection[u] === true }
+        function _selectOnly(u, idx) {
+            var s = {}; s[u] = true; _selection = s; _selCount = 1; _lastClickIdx = idx
+        }
+        function _toggleSel(u, idx) {
+            var s = Object.assign({}, _selection)
+            if (s[u]) { delete s[u] } else { s[u] = true }
+            _selection = s; _selCount = Object.keys(s).length; _lastClickIdx = idx
+        }
+        function _selectRange(toIdx) {
+            var from = _lastClickIdx >= 0 ? _lastClickIdx : toIdx
+            var lo = Math.min(from, toIdx), hi = Math.max(from, toIdx)
+            var s = Object.assign({}, _selection)
+            for (var i = lo; i <= hi; i++) { var u = listModel.getUuidAt(i); if (u) s[u] = true }
+            _selection = s; _selCount = Object.keys(s).length
+        }
+        function _getSelUuids() {
+            var r = []
+            for (var i = 0; i < listModel.rowCount(); i++) { var u = listModel.getUuidAt(i); if (_selection[u]) r.push(u) }
+            return r
+        }
+
         // Calculate model insertion index from global mouse position,
         // accounting for filtered (hidden) items.
         function getDropModelIndex(globalY) {
@@ -1442,14 +1561,41 @@ ApplicationWindow {
                 }
                 keyNavigationEnabled: true
 
-                Keys.onReturnPressed: { if (currentIndex >= 0) transferMod(currentIndex, listModel.getUuidAt(currentIndex)) }
-                Keys.onSpacePressed: { if (currentIndex >= 0) transferMod(currentIndex, listModel.getUuidAt(currentIndex)) }
-                Keys.onDeletePressed: { if (currentIndex >= 0) { var uuid = listModel.getUuidAt(currentIndex); contextMenu.deleteModFolder(uuid); listModel.removeByUuids([uuid]) } }
+                Keys.onPressed: function(event) {
+                    if (event.key === Qt.Key_A && (event.modifiers & Qt.ControlModifier)) {
+                        var s = {}
+                        for (var i = 0; i < listModel.rowCount(); i++) { var u = listModel.getUuidAt(i); if (u) s[u] = true }
+                        cardRoot._selection = s; cardRoot._selCount = Object.keys(s).length
+                        event.accepted = true
+                    }
+                }
+                Keys.onReturnPressed: {
+                    if (cardRoot._selCount > 0) { var uuids = cardRoot._getSelUuids(); listModel.removeByUuids(uuids); otherModel.insertUuids(uuids, -1); cardRoot._clearSel(); _rebuildInactiveProxy(); root.refreshErrorsWarnings() }
+                    else if (currentIndex >= 0) transferMod(currentIndex, listModel.getUuidAt(currentIndex))
+                }
+                Keys.onSpacePressed: {
+                    if (cardRoot._selCount > 0) { var uuids = cardRoot._getSelUuids(); listModel.removeByUuids(uuids); otherModel.insertUuids(uuids, -1); cardRoot._clearSel(); _rebuildInactiveProxy(); root.refreshErrorsWarnings() }
+                    else if (currentIndex >= 0) transferMod(currentIndex, listModel.getUuidAt(currentIndex))
+                }
+                Keys.onDeletePressed: {
+                    if (cardRoot._selCount > 0) { var uuids = cardRoot._getSelUuids(); for (var i = 0; i < uuids.length; i++) contextMenu.deleteModFolder(uuids[i]); listModel.removeByUuids(uuids); cardRoot._clearSel() }
+                    else if (currentIndex >= 0) { var uuid = listModel.getUuidAt(currentIndex); contextMenu.deleteModFolder(uuid); listModel.removeByUuids([uuid]) }
+                }
 
                 function transferMod(idx, modUuid) {
                     if (!listModel || !otherModel) return
-                    listModel.removeByUuids([modUuid])
-                    otherModel.insertUuids([modUuid], -1)
+                    // If the mod is in a multi-selection, transfer all selected
+                    if (cardRoot._selCount > 1 && cardRoot._isSel(modUuid)) {
+                        var uuids = cardRoot._getSelUuids()
+                        listModel.removeByUuids(uuids)
+                        otherModel.insertUuids(uuids, -1)
+                        cardRoot._clearSel()
+                    } else {
+                        listModel.removeByUuids([modUuid])
+                        otherModel.insertUuids([modUuid], -1)
+                        cardRoot._clearSel()
+                    }
+                    _rebuildInactiveProxy()
                     root.refreshErrorsWarnings()
                 }
 
@@ -1542,7 +1688,8 @@ ApplicationWindow {
                         radius: 5
                         color: {
                             if (_dragging && _dragUuid === delegateItem.uuid) return Theme.selection
-                            if (lv.currentIndex === delegateItem.index) return Theme.selectionActive
+                            if (cardRoot._isSel(delegateItem.uuid)) return Theme.selectionActive
+                            if (cardRoot._selCount === 0 && lv.currentIndex === delegateItem.index) return Theme.selectionActive
                             if (dragMa.containsMouse) return Theme.hover
                             // Error/warning background tinting
                             if (delegateItem.errors !== "") return Theme.withPanelAlpha(Theme.mode === "dark" ? "#3D1518" : "#FDE8E8")
@@ -1557,10 +1704,13 @@ ApplicationWindow {
                             acceptedButtons: Qt.LeftButton | Qt.RightButton
                             property point pressPos: Qt.point(0, 0)
                             property bool didDrag: false
+                            property int pressModifiers: 0
 
                             onPressed: function(mouse) {
                                 if (mouse.button === Qt.RightButton) {
                                     lv.currentIndex = delegateItem.index
+                                    if (!cardRoot._isSel(delegateItem.uuid))
+                                        cardRoot._selectOnly(delegateItem.uuid, delegateItem.index)
                                     // Build context menu dynamically
                                     var info = contextMenu.getModMenuInfo(delegateItem.uuid)
                                     modContextMenu.targetUuid = delegateItem.uuid
@@ -1573,6 +1723,7 @@ ApplicationWindow {
                                     return
                                 }
                                 pressPos = Qt.point(mouse.x, mouse.y)
+                                pressModifiers = mouse.modifiers
                                 didDrag = false
                             }
                             onPositionChanged: function(mouse) {
@@ -1583,6 +1734,11 @@ ApplicationWindow {
                                     _dragUuid = delegateItem.uuid
                                     _dragName = delegateItem.name
                                     _dragSourceList = cardRoot.listKey
+                                    if (cardRoot._selCount > 1 && cardRoot._isSel(delegateItem.uuid)) {
+                                        _dragUuids = cardRoot._getSelUuids()
+                                    } else {
+                                        _dragUuids = [delegateItem.uuid]
+                                    }
                                 }
                                 if (_dragging) {
                                     var gp = dragMa.mapToGlobal(mouse.x, mouse.y)
@@ -1597,6 +1753,13 @@ ApplicationWindow {
                                     _finishDrag(gp, cardRoot)
                                 } else if (!didDrag) {
                                     lv.currentIndex = delegateItem.index
+                                    if (pressModifiers & Qt.ControlModifier) {
+                                        cardRoot._toggleSel(delegateItem.uuid, delegateItem.index)
+                                    } else if (pressModifiers & Qt.ShiftModifier) {
+                                        cardRoot._selectRange(delegateItem.index)
+                                    } else {
+                                        cardRoot._selectOnly(delegateItem.uuid, delegateItem.index)
+                                    }
                                     if (modInfo) modInfo.displayModInfo(delegateItem.uuid)
                                 }
                             }
@@ -1643,15 +1806,24 @@ ApplicationWindow {
                                 }
                                 MenuSeparator {}
                                 MenuItem {
-                                    text: cardRoot.listKey === "active" ? root.tr("Deactivate mod") : root.tr("Activate mod")
+                                    text: {
+                                        var label = cardRoot.listKey === "active" ? root.tr("Deactivate mod") : root.tr("Activate mod")
+                                        return cardRoot._selCount > 1 ? label + " (" + cardRoot._selCount + ")" : label
+                                    }
                                     onTriggered: lv.transferMod(delegateItem.index, delegateItem.uuid)
                                 }
                                 MenuSeparator {}
                                 MenuItem {
-                                    text: root.tr("Delete mod")
+                                    text: cardRoot._selCount > 1 ? root.tr("Delete mod") + " (" + cardRoot._selCount + ")" : root.tr("Delete mod")
                                     onTriggered: {
-                                        contextMenu.deleteModFolder(modContextMenu.targetUuid)
-                                        listModel.removeByUuids([modContextMenu.targetUuid])
+                                        if (cardRoot._selCount > 1) {
+                                            var uuids = cardRoot._getSelUuids()
+                                            for (var i = 0; i < uuids.length; i++) contextMenu.deleteModFolder(uuids[i])
+                                            listModel.removeByUuids(uuids); cardRoot._clearSel()
+                                        } else {
+                                            contextMenu.deleteModFolder(modContextMenu.targetUuid)
+                                            listModel.removeByUuids([modContextMenu.targetUuid])
+                                        }
                                     }
                                 }
                             }
@@ -1720,8 +1892,9 @@ ApplicationWindow {
     // Handle drag drop completion — find which list the cursor is over (folder-aware)
     function _finishDrag(globalPos, sourceCard) {
         var uuid = _dragUuid
+        var draggedUuids = _dragUuids.length > 0 ? _dragUuids.slice() : (uuid ? [uuid] : [])
         var srcKey = _dragSourceList
-        _dragging = false; _dragUuid = ""; _dragName = ""; _dragSourceList = ""; _dragFolderId = ""
+        _dragging = false; _dragUuid = ""; _dragName = ""; _dragSourceList = ""; _dragFolderId = ""; _dragUuids = []
 
         if (!uuid) return
 
@@ -1749,23 +1922,29 @@ ApplicationWindow {
                 if (srcKey === "inactive" && card.listKey === "active") {
                     crossDropIdx = card.getDropModelIndex(globalPos.y)
                 }
-                sourceCard.listModel.removeByUuids([uuid])
-                card.listModel.insertUuids([uuid], crossDropIdx)
+                sourceCard.listModel.removeByUuids(draggedUuids)
+                card.listModel.insertUuids(draggedUuids, crossDropIdx)
                 // Active → Inactive: restore remembered folder (only if not already present)
                 if (srcKey === "active" && card.listKey === "inactive") {
-                    var mem = _modFolderMemory[uuid]
-                    if (mem) {
-                        for (var fi = 0; fi < _folders.length; fi++) {
-                            if (_folders[fi].id === mem) {
-                                // UUID is still in modUuids at its original position — skip re-add
-                                if (_folders[fi].modUuids.indexOf(uuid) < 0) {
-                                    _addModToFolder(uuid, mem)
+                    for (var du = 0; du < draggedUuids.length; du++) {
+                        var dUuid = draggedUuids[du]
+                        var mem = _modFolderMemory[dUuid]
+                        if (mem) {
+                            for (var fi = 0; fi < _folders.length; fi++) {
+                                if (_folders[fi].id === mem) {
+                                    if (_folders[fi].modUuids.indexOf(dUuid) < 0) {
+                                        _addModToFolder(dUuid, mem)
+                                    }
+                                    break
                                 }
-                                break
                             }
                         }
                     }
                 }
+                // Clear selection on source card after transfer
+                if (sourceCard._clearSel) sourceCard._clearSel()
+                // Rebuild inactive proxy model so added/removed mods appear/disappear
+                _rebuildInactiveProxy()
             } else if (card.listKey === "inactive") {
                 // Same list: inactive — folder management via proxy index
                 // Use Math.round to match the drop indicator line (insert BETWEEN rows)
@@ -1909,15 +2088,32 @@ ApplicationWindow {
             } else {
                 // Same list: active — reorder (filter-aware)
                 var targetIdx = card.getDropModelIndex(globalPos.y)
-                var uuids = card.listModel.getUuids()
-                var fromIdx = -1
-                for (var k = 0; k < uuids.length; k++) { if (uuids[k] === uuid) { fromIdx = k; break } }
-                if (targetIdx > uuids.length) targetIdx = uuids.length
-                // When dragging down, the source removal shifts items up by 1
-                if (fromIdx >= 0 && targetIdx > fromIdx) targetIdx--
-                if (fromIdx >= 0 && fromIdx !== targetIdx) {
-                    card.listModel.moveItem(fromIdx, targetIdx)
+                if (draggedUuids.length > 1) {
+                    // Multi-item reorder: remove all selected, then insert at adjusted position
+                    var allU = card.listModel.getUuids()
+                    var dragSet = {}
+                    for (var ds = 0; ds < draggedUuids.length; ds++) dragSet[draggedUuids[ds]] = true
+                    // Count how many dragged items are before the target position
+                    var removedBefore = 0
+                    for (var ai = 0; ai < allU.length && ai < targetIdx; ai++) {
+                        if (dragSet[allU[ai]]) removedBefore++
+                    }
+                    var adjTarget = targetIdx - removedBefore
+                    if (adjTarget < 0) adjTarget = 0
+                    card.listModel.removeByUuids(draggedUuids)
+                    card.listModel.insertUuids(draggedUuids, adjTarget)
+                } else {
+                    // Single item reorder
+                    var uuids = card.listModel.getUuids()
+                    var fromIdx = -1
+                    for (var k = 0; k < uuids.length; k++) { if (uuids[k] === uuid) { fromIdx = k; break } }
+                    if (targetIdx > uuids.length) targetIdx = uuids.length
+                    if (fromIdx >= 0 && targetIdx > fromIdx) targetIdx--
+                    if (fromIdx >= 0 && fromIdx !== targetIdx) {
+                        card.listModel.moveItem(fromIdx, targetIdx)
+                    }
                 }
+                if (card._clearSel) card._clearSel()
             }
             root.refreshErrorsWarnings()
             return
@@ -1927,7 +2123,7 @@ ApplicationWindow {
     // Handle folder drag-drop reordering
     function _finishFolderDrag(globalPos) {
         var folderId = _dragFolderId
-        _dragging = false; _dragFolderId = ""; _dragName = ""; _dragSourceList = ""; _dragUuid = ""
+        _dragging = false; _dragFolderId = ""; _dragName = ""; _dragSourceList = ""; _dragUuid = ""; _dragUuids = []
         if (!folderId || _folders.length < 2) return
 
         // Find current folder index
@@ -2174,7 +2370,6 @@ ApplicationWindow {
     // ---- Proxy model rebuild/sync ----
     function _rebuildInactiveProxy() {
         if (!inactiveModsModel) return
-
         // Save scroll position, detach model to prevent ListView from reacting during rebuild
         var savedY = inactiveLv.contentY
         inactiveLv.model = null
