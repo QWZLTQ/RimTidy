@@ -165,6 +165,7 @@ _ZH_CN: dict[str, str] = {
     "Miscellaneous": "其他",
     "Edit mod rules": "编辑 Mod 规则",
     "Workshop options": "创意工坊选项",
+    "Convert Steam mod to local": "将 Steam 模组转换为本地模组",
     "Re-download with git": "通过 Git 重新下载",
     "Re-download with SteamCMD": "通过 SteamCMD 重新下载",
     "Re-subscribe with Steam": "通过 Steam 重新订阅",
@@ -216,15 +217,20 @@ _ZH_CN: dict[str, str] = {
     "Leave empty to use default": "留空使用默认值",
 
     # Settings - Databases
+    "Auto-update databases on startup": "启动时自动更新数据库",
     "Community Rules Database": "社区规则数据库",
-    "URL or local path to the community rules database used for sorting.": "用于排序的社区规则数据库 URL 或本地路径。",
-    "Community rules database path or URL...": "社区规则数据库路径或 URL...",
+    "Community-maintained load order rules for mod sorting.": "由社区维护的 Mod 加载顺序规则，用于排序。",
+    "Disabled": "禁用",
+    "Git Repository": "Git 仓库",
+    "Repository URL...": "仓库地址...",
     "Steam Workshop Database": "Steam 创意工坊数据库",
-    "URL or local path to the Steam Workshop database.": "Steam 创意工坊数据库 URL 或本地路径。",
-    "Steam Workshop database path or URL...": "Steam 创意工坊数据库路径或 URL...",
+    "Steam Workshop mod metadata and dependency information.": "Steam 创意工坊 Mod 元数据及依赖信息。",
+    "Database expiry (seconds, 0 = never):": "数据库过期时间（秒，0 = 永不过期）：",
     "No Version Warning Database": "无版本警告数据库",
-    "Path or URL...": "路径或 URL...",
+    "Suppresses version mismatch warnings for known-compatible mods.": "对已知兼容的 Mod 屏蔽版本不匹配警告。",
     "Use This Instead Database": "替代 Mod 数据库",
+    "Suggests replacement mods for outdated or removed mods.": "为过时或已下架的 Mod 推荐替代方案。",
+    "Path or URL...": "路径或 URL...",
 
     # Settings - DB Builder
     "Database Builder": "数据库构建器",

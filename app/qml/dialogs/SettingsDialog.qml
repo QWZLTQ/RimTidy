@@ -133,19 +133,79 @@ Popup {
                         id: dbCol; anchors.left: parent.left; anchors.right: parent.right; anchors.top: parent.top
                         anchors.margins: 20; spacing: 12
 
+                        SCheck { text: tr("Auto-update databases on startup"); checked: settings.updateDatabasesOnStartup; onToggled: settings.updateDatabasesOnStartup = checked }
+
+                        Connections {
+                            target: appBridge
+                            function onDatabaseStatus(dbType, msg) {
+                                if (dbType === "community_rules") dbStatusCR.text = msg
+                                else if (dbType === "steam_db") dbStatusSD.text = msg
+                                else if (dbType === "no_version_warning") dbStatusNVW.text = msg
+                                else if (dbType === "use_this_instead") dbStatusUTI.text = msg
+                            }
+                        }
+
+                        // --- Community Rules ---
                         SGroupTitle { text: tr("Community Rules Database") }
-                        SDesc { text: tr("URL or local path to the community rules database used for sorting.") }
-                        SPathField { placeholderText: tr("Community rules database path or URL...") }
+                        SDesc { text: tr("Community-maintained load order rules for mod sorting.") }
+                        RowLayout { Layout.fillWidth: true; spacing: 8
+                            SRadio { text: tr("Disabled"); checked: settings.communityRulesSource === "None"; onToggled: if (checked) settings.communityRulesSource = "None" }
+                            SRadio { text: tr("Git Repository"); checked: settings.communityRulesSource === "Configured git repository"; onToggled: if (checked) settings.communityRulesSource = "Configured git repository" }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: 8; visible: settings.communityRulesSource === "Configured git repository"
+                            SPathField { Layout.fillWidth: true; text: settings.communityRulesRepo; placeholderText: tr("Repository URL..."); onTextEdited: settings.communityRulesRepo = text }
+                            SBtn { text: tr("Download"); accent: true; onClicked: appBridge.downloadDatabase("community_rules") }
+                        }
+                        Text { id: dbStatusCR; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; text: ""; visible: text !== "" }
 
+                        // --- Steam Workshop ---
                         SGroupTitle { text: tr("Steam Workshop Database") }
-                        SDesc { text: tr("URL or local path to the Steam Workshop database.") }
-                        SPathField { placeholderText: tr("Steam Workshop database path or URL...") }
+                        SDesc { text: tr("Steam Workshop mod metadata and dependency information.") }
+                        RowLayout { Layout.fillWidth: true; spacing: 8
+                            SRadio { text: tr("Disabled"); checked: settings.steamDbSource === "None"; onToggled: if (checked) settings.steamDbSource = "None" }
+                            SRadio { text: tr("Git Repository"); checked: settings.steamDbSource === "Configured git repository"; onToggled: if (checked) settings.steamDbSource = "Configured git repository" }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: 8; visible: settings.steamDbSource === "Configured git repository"
+                            SPathField { Layout.fillWidth: true; text: settings.steamDbRepo; placeholderText: tr("Repository URL..."); onTextEdited: settings.steamDbRepo = text }
+                            SBtn { text: tr("Download"); accent: true; onClicked: appBridge.downloadDatabase("steam_db") }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: 8; visible: settings.steamDbSource === "Configured git repository"
+                            SDesc { text: tr("Database expiry (seconds, 0 = never):") }
+                            SPathField {
+                                Layout.preferredWidth: 100
+                                text: settings.databaseExpiry.toString()
+                                placeholderText: "0"
+                                validator: IntValidator { bottom: 0 }
+                                onTextEdited: settings.databaseExpiry = parseInt(text) || 0
+                            }
+                        }
+                        Text { id: dbStatusSD; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; text: ""; visible: text !== "" }
 
+                        // --- No Version Warning ---
                         SGroupTitle { text: tr("No Version Warning Database") }
-                        SPathField { placeholderText: tr("Path or URL...") }
+                        SDesc { text: tr("Suppresses version mismatch warnings for known-compatible mods.") }
+                        RowLayout { Layout.fillWidth: true; spacing: 8
+                            SRadio { text: tr("Disabled"); checked: settings.noVersionWarningSource === "None"; onToggled: if (checked) settings.noVersionWarningSource = "None" }
+                            SRadio { text: tr("Git Repository"); checked: settings.noVersionWarningSource === "Configured git repository"; onToggled: if (checked) settings.noVersionWarningSource = "Configured git repository" }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: 8; visible: settings.noVersionWarningSource === "Configured git repository"
+                            SPathField { Layout.fillWidth: true; text: settings.noVersionWarningRepo; placeholderText: tr("Repository URL..."); onTextEdited: settings.noVersionWarningRepo = text }
+                            SBtn { text: tr("Download"); accent: true; onClicked: appBridge.downloadDatabase("no_version_warning") }
+                        }
+                        Text { id: dbStatusNVW; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; text: ""; visible: text !== "" }
 
+                        // --- Use This Instead ---
                         SGroupTitle { text: tr("Use This Instead Database") }
-                        SPathField { placeholderText: tr("Path or URL...") }
+                        SDesc { text: tr("Suggests replacement mods for outdated or removed mods.") }
+                        RowLayout { Layout.fillWidth: true; spacing: 8
+                            SRadio { text: tr("Disabled"); checked: settings.useThisInsteadSource === "None"; onToggled: if (checked) settings.useThisInsteadSource = "None" }
+                            SRadio { text: tr("Git Repository"); checked: settings.useThisInsteadSource === "Configured git repository"; onToggled: if (checked) settings.useThisInsteadSource = "Configured git repository" }
+                        }
+                        RowLayout { Layout.fillWidth: true; spacing: 8; visible: settings.useThisInsteadSource === "Configured git repository"
+                            SPathField { Layout.fillWidth: true; text: settings.useThisInsteadRepo; placeholderText: tr("Repository URL..."); onTextEdited: settings.useThisInsteadRepo = text }
+                            SBtn { text: tr("Download"); accent: true; onClicked: appBridge.downloadDatabase("use_this_instead") }
+                        }
+                        Text { id: dbStatusUTI; Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize; font.bold: true; text: ""; visible: text !== "" }
                     }
                 }
 

@@ -18,6 +18,8 @@ class AppBridge(QObject):
 
     modListsReady = Signal()
     statusMessage = Signal(str)
+    databaseUpdateFinished = Signal()
+    databaseStatus = Signal(str, str)  # (db_type, message)
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -30,6 +32,12 @@ class AppBridge(QObject):
         self._active_restore: list[str] = []
         self._inactive_restore: list[str] = []
         self._active_last_save: list[str] = []
+        # Git worker references (prevent GC)
+        self._git_clone_workers: list[Any] = []
+        # Download queue for sequential database downloads
+        self._db_download_queue: list[tuple[str, str, str]] = []  # (base_path, repo_url, db_type)
+        self._db_downloading = False
+        self._batch_workers: list[Any] = []  # prevent GC of QRunnable workers
 
     def set_i18n(self, i18n: object) -> None:
         """Set the I18nBridge instance for translations."""
@@ -127,6 +135,183 @@ class AppBridge(QObject):
         except Exception as e:
             logger.error(f"Refresh failed: {e}")
             self.statusMessage.emit(f"Refresh error: {e}")
+
+    # ---- Database operations (mirrors MainContentController) ----
+
+    @Slot(str)
+    def downloadDatabase(self, db_type: str) -> None:
+        """Download/clone a database repository. db_type: community_rules|steam_db|no_version_warning|use_this_instead"""
+        if not self._settings:
+            self.databaseStatus.emit(db_type, "设置未加载")
+            return
+
+        from app.utils.app_info import AppInfo
+
+        base_path = str(AppInfo().databases_folder)
+        repo_url = ""
+        if db_type == "community_rules":
+            repo_url = self._settings.external_community_rules_repo
+        elif db_type == "steam_db":
+            repo_url = self._settings.external_steam_metadata_repo
+        elif db_type == "no_version_warning":
+            repo_url = self._settings.external_no_version_warning_repo_path
+        elif db_type == "use_this_instead":
+            repo_url = self._settings.external_use_this_instead_repo_path
+
+        if not repo_url:
+            self.databaseStatus.emit(db_type, "未配置仓库地址")
+            return
+
+        # Auto-set source to git repo and persist
+        source_attr = {
+            "community_rules": "external_community_rules_metadata_source",
+            "steam_db": "external_steam_metadata_source",
+            "no_version_warning": "external_no_version_warning_metadata_source",
+            "use_this_instead": "external_use_this_instead_metadata_source",
+        }.get(db_type)
+        if source_attr and getattr(self._settings, source_attr, None) != "Configured git repository":
+            setattr(self._settings, source_attr, "Configured git repository")
+            self._settings.save()
+
+        self.databaseStatus.emit(db_type, "等待下载...")
+        self._db_download_queue.append((base_path, repo_url, db_type))
+        self._process_download_queue()
+
+    @Slot()
+    def updateAllDatabases(self) -> None:
+        """Silently update all configured databases on startup via the download queue."""
+        if not self._settings:
+            return
+        if not self._settings.update_databases_on_startup:
+            logger.info("Update databases on startup is disabled.")
+            return
+
+        from app.utils.app_info import AppInfo
+
+        base_path = str(AppInfo().databases_folder)
+        db_configs = [
+            (self._settings.external_community_rules_metadata_source, self._settings.external_community_rules_repo),
+            (self._settings.external_steam_metadata_source, self._settings.external_steam_metadata_repo),
+            (self._settings.external_no_version_warning_metadata_source, self._settings.external_no_version_warning_repo_path),
+            (self._settings.external_use_this_instead_metadata_source, self._settings.external_use_this_instead_repo_path),
+        ]
+        for source, repo_url in db_configs:
+            if source == "Configured git repository" and repo_url:
+                self._db_download_queue.append((base_path, repo_url, ""))
+        self._process_download_queue()
+
+    def _process_download_queue(self) -> None:
+        """Process next item in download queue if not already downloading."""
+        if self._db_downloading or not self._db_download_queue:
+            return
+        self._db_downloading = True
+        base_path, repo_url, db_type = self._db_download_queue.pop(0)
+        self.databaseStatus.emit(db_type, "正在下载...")
+        self._do_database_clone(base_path, repo_url, db_type)
+
+    def _on_download_complete(self) -> None:
+        """Called when a download/update finishes, triggers next in queue."""
+        self._db_downloading = False
+        self._process_download_queue()
+
+    def _do_database_clone(self, base_path: str, repo_url: str, db_type: str = "") -> None:
+        """Clone or update a database repository (user-triggered)."""
+        from app.utils import git_utils
+        from app.utils.generic import check_internet_connection
+
+        if not check_internet_connection():
+            if db_type:
+                self.databaseStatus.emit(db_type, "无网络连接")
+            self._on_download_complete()
+            return
+
+        repo_folder = git_utils.git_get_repo_name(repo_url)
+        full_repo_path = Path(base_path) / repo_folder
+
+        if full_repo_path.exists():
+            self._do_batch_update_silent([full_repo_path], db_type)
+        else:
+            self._start_git_clone_worker(repo_url, str(full_repo_path), force=False, db_type=db_type)
+
+    def _do_batch_update_silent(self, repos_paths: list[Path], db_type: str = "") -> None:
+        """Schedule silent batch pull for repositories."""
+        from app.utils.git_worker import GitBatchUpdateWorker, GitOperationConfig
+
+        config = GitOperationConfig(notify_errors=False)
+        worker = GitBatchUpdateWorker(repos_paths, config=config)
+        self._batch_workers.append(worker)
+        worker.signals.finished.connect(lambda results, w=worker: self._on_batch_update_finished(results, db_type, w))
+        from PySide6.QtCore import QThreadPool
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_batch_update_finished(self, results: Any, db_type: str = "", worker: Any = None) -> None:
+        """Handle batch update completion."""
+        has_failed = hasattr(results, "failed") and results.failed
+        has_success = hasattr(results, "successful") and results.successful
+        if has_failed:
+            for path, err in results.failed:
+                logger.warning(f"Database update failed for {path}: {err}")
+            if db_type:
+                self.databaseStatus.emit(db_type, "更新失败")
+        elif has_success:
+            logger.info(f"Database update: {len(results.successful)} repos updated")
+            if db_type:
+                self.databaseStatus.emit(db_type, "已更新完成")
+        else:
+            # Already up to date
+            if db_type:
+                self.databaseStatus.emit(db_type, "已是最新")
+        if worker and worker in self._batch_workers:
+            self._batch_workers.remove(worker)
+        self.databaseUpdateFinished.emit()
+        self._on_download_complete()
+
+    def _start_git_clone_worker(self, repo_url: str, base_path: str, force: bool, db_type: str = "") -> None:
+        """Start a GitCloneWorker for database cloning."""
+        from app.utils.git_worker import GitCloneWorker, GitOperationConfig
+
+        config = GitOperationConfig(notify_errors=False)
+        worker = GitCloneWorker(
+            repo_url=repo_url,
+            repo_path=base_path,
+            force=force,
+            config=config,
+        )
+        self._git_clone_workers.append(worker)
+        worker.finished.connect(lambda s, m, p: self._on_git_clone_finished(worker, s, m, p, db_type))
+        worker.progress.connect(self._on_git_clone_progress)
+        worker.error.connect(lambda msg: self._on_git_clone_error(msg, db_type))
+        logger.info(f"Starting git clone worker for: {repo_url}")
+        worker.start()
+
+    @Slot(str)
+    def _on_git_clone_progress(self, message: str) -> None:
+        logger.debug(f"Git clone progress: {message}")
+
+    def _on_git_clone_finished(self, worker: Any, success: bool, message: str, path: str, db_type: str = "") -> None:
+        logger.info(f"Git clone finished: success={success}, path={path}")
+        if success:
+            if db_type:
+                self.databaseStatus.emit(db_type, "下载完成")
+        else:
+            if db_type:
+                self.databaseStatus.emit(db_type, f"下载失败：{message}")
+        # Safe cleanup
+        try:
+            worker.quit()
+            worker.wait()
+            worker.deleteLater()
+        except Exception:
+            pass
+        if worker in self._git_clone_workers:
+            self._git_clone_workers.remove(worker)
+        self.databaseUpdateFinished.emit()
+        self._on_download_complete()
+
+    def _on_git_clone_error(self, error_message: str, db_type: str = "") -> None:
+        logger.error(f"Git clone error: {error_message}")
+        if db_type:
+            self.databaseStatus.emit(db_type, f"出错：{error_message}")
 
     # ---- Save (mirrors _do_save exactly) ----
 

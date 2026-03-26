@@ -8,13 +8,48 @@ from datetime import datetime
 from pathlib import Path
 
 from loguru import logger
-from PySide6.QtCore import Property, QObject, Signal, Slot
+from PySide6.QtCore import Property, QObject, QThread, Signal, Slot
+
+
+class _TranslateWorker(QThread):
+    """Background thread for translation using translators library."""
+
+    finished = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, text: str, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._text = text
+
+    def run(self) -> None:
+        try:
+            import re
+
+            import translators as ts
+
+            # Clean up source text: collapse whitespace, remove excessive newlines
+            clean = re.sub(r"\n{3,}", "\n\n", self._text).strip()
+
+            # Skip if already Chinese
+            chinese_chars = len(re.findall(r"[\u4e00-\u9fff]", clean))
+            if chinese_chars > len(clean) * 0.3:
+                self.finished.emit(clean)
+                return
+
+            result = ts.translate_text(
+                clean, translator="bing", to_language="zh-Hans"
+            )
+            self.finished.emit(str(result))
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class ModInfoBridge(QObject):
     """Exposes selected mod's metadata as QML-bindable properties."""
 
     infoChanged = Signal()
+    translateResult = Signal(str)  # successful translation
+    translateError = Signal(str)  # error message
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -252,6 +287,19 @@ class ModInfoBridge(QObject):
             return dt.strftime("%Y-%m-%d %H:%M:%S")
         except (ValueError, OSError, OverflowError, TypeError):
             return ""
+
+    @Slot(str)
+    def translateText(self, text: str) -> None:
+        """Translate text to Chinese via free Baidu Translate (async)."""
+        if not text or not text.strip():
+            self.translateError.emit("No text to translate")
+            return
+        worker = _TranslateWorker(text.strip(), self)
+        worker.finished.connect(self.translateResult.emit)
+        worker.error.connect(self.translateError.emit)
+        worker.finished.connect(worker.deleteLater)
+        worker.error.connect(worker.deleteLater)
+        worker.start()
 
     @staticmethod
     def _find_preview_image(mod_path: str) -> str:

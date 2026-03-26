@@ -188,6 +188,24 @@ def launch_qml_app() -> int:
                 # Sync custom background settings
                 settings_bridge.customBackground = getattr(s, "custom_background", "")
                 settings_bridge.panelOpacity = getattr(s, "panel_opacity", 1.0)
+                # Sync database settings
+                settings_bridge.communityRulesSource = s.external_community_rules_metadata_source
+                settings_bridge.communityRulesRepo = s.external_community_rules_repo
+                settings_bridge.communityRulesFilePath = s.external_community_rules_file_path
+                settings_bridge.steamDbSource = s.external_steam_metadata_source
+                settings_bridge.steamDbRepo = s.external_steam_metadata_repo
+                settings_bridge.steamDbFilePath = s.external_steam_metadata_file_path
+                settings_bridge.noVersionWarningSource = s.external_no_version_warning_metadata_source
+                settings_bridge.noVersionWarningRepo = s.external_no_version_warning_repo_path
+                settings_bridge.noVersionWarningFilePath = s.external_no_version_warning_file_path
+                settings_bridge.useThisInsteadSource = s.external_use_this_instead_metadata_source
+                settings_bridge.useThisInsteadRepo = s.external_use_this_instead_repo_path
+                settings_bridge.useThisInsteadFilePath = s.external_use_this_instead_file_path
+                settings_bridge.databaseExpiry = s.database_expiry
+                settings_bridge.updateDatabasesOnStartup = getattr(s, "update_databases_on_startup", True)
+
+            # Auto-update databases on startup (mirrors Qt version)
+            app_bridge.updateAllDatabases()
 
     QTimer.singleShot(100, deferred_init)
 

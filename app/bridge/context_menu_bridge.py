@@ -243,6 +243,66 @@ class ContextMenuBridge(QObject):
             logger.error(f"unsubscribeSteamMod failed: {e}")
 
     @Slot(str)
+    def convertSteamToLocal(self, uuid: str) -> None:
+        """Convert a Steam Workshop mod to a local mod by copying it."""
+        try:
+            import shutil
+            from pathlib import Path
+
+            from app.models.settings import Settings
+            from app.utils.generic import sanitize_filename
+
+            meta = self._mm().internal_local_metadata.get(uuid, {})
+            mod_path = meta.get("path", "")
+            if not mod_path:
+                self.statusMessage.emit("Mod path not found")
+                return
+
+            s = Settings()
+            s.load()
+            inst = s.instances.get(s.current_instance)
+            if not inst or not inst.local_folder:
+                self.statusMessage.emit("Local mods folder not configured")
+                return
+
+            # Determine destination name
+            mod_name = meta.get("name", "")
+            publishedfileid = meta.get("publishedfileid", "")
+            folder_name = sanitize_filename(mod_name) if mod_name else publishedfileid
+            if not folder_name:
+                folder_name = Path(mod_path).name
+
+            dest = Path(inst.local_folder) / folder_name
+
+            # If destination exists, clear files except .dds textures
+            if dest.exists():
+                from app.utils.generic import delete_files_except_extension
+                delete_files_except_extension(str(dest), ".dds")
+
+            # Copy mod
+            try:
+                shutil.copytree(mod_path, str(dest), dirs_exist_ok=True)
+            except TypeError:
+                # Python < 3.8 fallback
+                if not dest.exists():
+                    shutil.copytree(mod_path, str(dest))
+                else:
+                    for item in Path(mod_path).rglob("*"):
+                        rel = item.relative_to(mod_path)
+                        target = dest / rel
+                        if item.is_dir():
+                            target.mkdir(parents=True, exist_ok=True)
+                        else:
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(str(item), str(target))
+
+            self.statusMessage.emit(f"Converted to local: {folder_name}")
+            logger.info(f"Converted Steam mod to local: {mod_path} -> {dest}")
+        except Exception as e:
+            logger.error(f"convertSteamToLocal failed: {e}")
+            self.statusMessage.emit(f"Conversion failed: {e}")
+
+    @Slot(str)
     def deleteModFolder(self, uuid: str) -> None:
         """Delete mod from disk."""
         try:

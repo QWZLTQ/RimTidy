@@ -395,22 +395,63 @@ ApplicationWindow {
 
                         // User notes
                         Rectangle {
-                            Layout.fillWidth: true; Layout.preferredHeight: parent.height * 0.12
+                            Layout.fillWidth: true; Layout.preferredHeight: parent.height * 0.18
                             visible: modInfoPanel.miName !== ""
                             radius: Theme.borderRadiusSmall; color: Theme.surface; border.color: notesArea.activeFocus ? Theme.accent : Theme.border; border.width: 1
                             Behavior on border.color { ColorAnimation { duration: 120 } }
-                            TextArea {
-                                id: notesArea
+                            Flickable {
+                                id: notesFlick
                                 anchors.fill: parent; anchors.margins: 4
-                                placeholderText: root.tr("Personal notes...")
-                                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall
-                                color: Theme.textPrimary; wrapMode: TextEdit.Wrap
-                                background: null
+                                contentHeight: notesArea.implicitHeight; clip: true
+                                boundsBehavior: Flickable.StopAtBounds
+                                ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded; contentItem: Rectangle { implicitWidth: 4; radius: 2; color: "#C0C0C0" } }
+                                TextArea {
+                                    id: notesArea
+                                    width: notesFlick.width
+                                    placeholderText: root.tr("Personal notes...")
+                                    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall
+                                    color: Theme.textPrimary; wrapMode: TextEdit.Wrap
+                                    background: null
+                                    onTextChanged: {
+                                        if (modInfoPanel.miPackageId)
+                                            root._setModNote(modInfoPanel.miPackageId, text)
+                                    }
+                                }
                             }
                         }
 
-                        // Separator
-                        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle }
+                        // Translate button
+                        Rectangle {
+                            Layout.fillWidth: true; Layout.preferredHeight: 28
+                            visible: modInfoPanel.miName !== "" && modInfoPanel.miDescription !== ""
+                            color: "transparent"
+                            RowLayout {
+                                anchors.fill: parent; spacing: 4
+                                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle; Layout.alignment: Qt.AlignVCenter }
+                                Rectangle {
+                                    Layout.preferredWidth: translateRow.implicitWidth + 16; Layout.preferredHeight: 24
+                                    radius: Theme.borderRadiusSmall; color: translateMa.containsMouse ? Theme.accentHover : Theme.accent
+                                    opacity: translateMa.containsMouse ? 1.0 : 0.85
+                                    Behavior on color { ColorAnimation { duration: 80 } }
+                                    Row {
+                                        id: translateRow; anchors.centerIn: parent; spacing: 4
+                                        Text { text: "\u2193"; color: "white"; font.pixelSize: Theme.fontSizeSmall; font.bold: true }
+                                        Text { text: root.tr("翻译简介"); color: "white"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSizeSmall - 1 }
+                                    }
+                                    MouseArea {
+                                        id: translateMa; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (root._translatingPackageId) return
+                                            root._translatingPackageId = modInfoPanel.miPackageId
+                                            notesArea.text = "翻译中...请勿跳转"
+                                            var plainDesc = modInfoPanel.miDescription.replace(/<[^>]*>/g, "")
+                                            modInfo.translateText(plainDesc)
+                                        }
+                                    }
+                                }
+                                Rectangle { Layout.fillWidth: true; height: 1; color: Theme.borderSubtle; Layout.alignment: Qt.AlignVCenter }
+                            }
+                        }
 
                         // Description
                         Flickable {
@@ -1001,6 +1042,7 @@ ApplicationWindow {
                                                         }
                                                         Menu {
                                                             title: root.tr("Workshop options")
+                                                            MenuItem { text: root.tr("Convert Steam mod to local"); visible: proxyDelegate.dataSource === "workshop"; height: visible ? implicitHeight : 0; onTriggered: contextMenu.convertSteamToLocal(inactiveModCtxMenu.targetUuid) }
                                                             MenuItem { text: root.tr("Re-download with git"); onTriggered: contextMenu.redownloadGitMod(inactiveModCtxMenu.targetUuid) }
                                                             MenuItem { text: root.tr("Re-download with SteamCMD"); onTriggered: contextMenu.redownloadSteamcmdMod(inactiveModCtxMenu.targetUuid) }
                                                             MenuItem { text: root.tr("Re-subscribe with Steam"); visible: proxyDelegate.dataSource === "workshop"; height: visible ? implicitHeight : 0; onTriggered: contextMenu.resubscribeSteamMod(inactiveModCtxMenu.targetUuid) }
@@ -1361,6 +1403,25 @@ ApplicationWindow {
     Component.onDestruction: {
         themeSettings.mode = Theme.mode
         themeSettings.scheme = Theme.scheme
+    }
+
+    // ---- Translate state & result handler ----
+    property string _translatingPackageId: ""
+
+    Connections {
+        target: modInfo
+        function onTranslateResult(text) {
+            if (root._translatingPackageId && root._translatingPackageId === modInfoPanel.miPackageId) {
+                notesArea.text = text.replace(/\n{3,}/g, "\n\n").trim()
+            }
+            root._translatingPackageId = ""
+        }
+        function onTranslateError(msg) {
+            if (root._translatingPackageId && root._translatingPackageId === modInfoPanel.miPackageId) {
+                notesArea.text = "[翻译失败] " + msg
+            }
+            root._translatingPackageId = ""
+        }
     }
 
     // ---- Per-mod user notes (keyed by packageId for persistence) ----
@@ -1799,6 +1860,7 @@ ApplicationWindow {
                                 }
                                 Menu {
                                     title: root.tr("Workshop options")
+                                    MenuItem { text: root.tr("Convert Steam mod to local"); visible: delegateItem.dataSource === "workshop"; height: visible ? implicitHeight : 0; onTriggered: contextMenu.convertSteamToLocal(modContextMenu.targetUuid) }
                                     MenuItem { text: root.tr("Re-download with git"); onTriggered: contextMenu.redownloadGitMod(modContextMenu.targetUuid) }
                                     MenuItem { text: root.tr("Re-download with SteamCMD"); onTriggered: contextMenu.redownloadSteamcmdMod(modContextMenu.targetUuid) }
                                     MenuItem { text: root.tr("Re-subscribe with Steam"); visible: delegateItem.dataSource === "workshop"; height: visible ? implicitHeight : 0; onTriggered: contextMenu.resubscribeSteamMod(modContextMenu.targetUuid) }
@@ -2682,4 +2744,5 @@ ApplicationWindow {
         _loadModNotes()
         _rebuildInactiveProxy()
     }
+
 }

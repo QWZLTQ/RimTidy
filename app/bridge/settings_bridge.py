@@ -40,6 +40,21 @@ class SettingsBridge(QObject):
         # Custom background settings
         self._custom_background = ""
         self._panel_opacity = 1.0
+        # Database settings
+        self._community_rules_source = "None"
+        self._community_rules_repo = "https://github.com/RimSort/Community-Rules-Database"
+        self._community_rules_file_path = ""
+        self._steam_db_source = "None"
+        self._steam_db_repo = "https://github.com/RimSort/Steam-Workshop-Database"
+        self._steam_db_file_path = ""
+        self._no_version_warning_source = "None"
+        self._no_version_warning_repo = "https://github.com/emipa606/NoVersionWarning"
+        self._no_version_warning_file_path = ""
+        self._use_this_instead_source = "None"
+        self._use_this_instead_repo = "https://github.com/emipa606/UseThisInstead"
+        self._use_this_instead_file_path = ""
+        self._database_expiry = 0
+        self._update_databases_on_startup = True
 
     # --- Dialog visibility ---
     visibleChanged = Signal()
@@ -251,6 +266,133 @@ class SettingsBridge(QObject):
         self._panel_opacity = val
         self.settingsChanged.emit()
 
+    # --- Database settings ---
+    @Property(str, notify=settingsChanged)
+    def communityRulesSource(self) -> str:
+        return self._community_rules_source
+
+    @communityRulesSource.setter  # type: ignore[no-redef]
+    def communityRulesSource(self, val: str) -> None:
+        self._community_rules_source = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def communityRulesRepo(self) -> str:
+        return self._community_rules_repo
+
+    @communityRulesRepo.setter  # type: ignore[no-redef]
+    def communityRulesRepo(self, val: str) -> None:
+        self._community_rules_repo = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def communityRulesFilePath(self) -> str:
+        return self._community_rules_file_path
+
+    @communityRulesFilePath.setter  # type: ignore[no-redef]
+    def communityRulesFilePath(self, val: str) -> None:
+        self._community_rules_file_path = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def steamDbSource(self) -> str:
+        return self._steam_db_source
+
+    @steamDbSource.setter  # type: ignore[no-redef]
+    def steamDbSource(self, val: str) -> None:
+        self._steam_db_source = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def steamDbRepo(self) -> str:
+        return self._steam_db_repo
+
+    @steamDbRepo.setter  # type: ignore[no-redef]
+    def steamDbRepo(self, val: str) -> None:
+        self._steam_db_repo = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def steamDbFilePath(self) -> str:
+        return self._steam_db_file_path
+
+    @steamDbFilePath.setter  # type: ignore[no-redef]
+    def steamDbFilePath(self, val: str) -> None:
+        self._steam_db_file_path = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def noVersionWarningSource(self) -> str:
+        return self._no_version_warning_source
+
+    @noVersionWarningSource.setter  # type: ignore[no-redef]
+    def noVersionWarningSource(self, val: str) -> None:
+        self._no_version_warning_source = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def noVersionWarningRepo(self) -> str:
+        return self._no_version_warning_repo
+
+    @noVersionWarningRepo.setter  # type: ignore[no-redef]
+    def noVersionWarningRepo(self, val: str) -> None:
+        self._no_version_warning_repo = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def noVersionWarningFilePath(self) -> str:
+        return self._no_version_warning_file_path
+
+    @noVersionWarningFilePath.setter  # type: ignore[no-redef]
+    def noVersionWarningFilePath(self, val: str) -> None:
+        self._no_version_warning_file_path = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def useThisInsteadSource(self) -> str:
+        return self._use_this_instead_source
+
+    @useThisInsteadSource.setter  # type: ignore[no-redef]
+    def useThisInsteadSource(self, val: str) -> None:
+        self._use_this_instead_source = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def useThisInsteadRepo(self) -> str:
+        return self._use_this_instead_repo
+
+    @useThisInsteadRepo.setter  # type: ignore[no-redef]
+    def useThisInsteadRepo(self, val: str) -> None:
+        self._use_this_instead_repo = val
+        self.settingsChanged.emit()
+
+    @Property(str, notify=settingsChanged)
+    def useThisInsteadFilePath(self) -> str:
+        return self._use_this_instead_file_path
+
+    @useThisInsteadFilePath.setter  # type: ignore[no-redef]
+    def useThisInsteadFilePath(self, val: str) -> None:
+        self._use_this_instead_file_path = val
+        self.settingsChanged.emit()
+
+    @Property(int, notify=settingsChanged)
+    def databaseExpiry(self) -> int:
+        return self._database_expiry
+
+    @databaseExpiry.setter  # type: ignore[no-redef]
+    def databaseExpiry(self, val: int) -> None:
+        self._database_expiry = val
+        self.settingsChanged.emit()
+
+    @Property(bool, notify=settingsChanged)
+    def updateDatabasesOnStartup(self) -> bool:
+        return self._update_databases_on_startup
+
+    @updateDatabasesOnStartup.setter  # type: ignore[no-redef]
+    def updateDatabasesOnStartup(self, val: bool) -> None:
+        self._update_databases_on_startup = val
+        self.settingsChanged.emit()
+
     @Slot(result=str)
     def pickBackgroundImage(self) -> str:
         """Open a native file dialog to pick a background image."""
@@ -311,6 +453,22 @@ class SettingsBridge(QObject):
             s.todds_dry_run = self._todds_dry_run
             s.todds_overwrite = self._todds_overwrite
 
+            # Database settings
+            s.external_community_rules_metadata_source = self._community_rules_source
+            s.external_community_rules_repo = self._community_rules_repo
+            s.external_community_rules_file_path = self._community_rules_file_path
+            s.external_steam_metadata_source = self._steam_db_source
+            s.external_steam_metadata_repo = self._steam_db_repo
+            s.external_steam_metadata_file_path = self._steam_db_file_path
+            s.external_no_version_warning_metadata_source = self._no_version_warning_source
+            s.external_no_version_warning_repo_path = self._no_version_warning_repo
+            s.external_no_version_warning_file_path = self._no_version_warning_file_path
+            s.external_use_this_instead_metadata_source = self._use_this_instead_source
+            s.external_use_this_instead_repo_path = self._use_this_instead_repo
+            s.external_use_this_instead_file_path = self._use_this_instead_file_path
+            s.database_expiry = self._database_expiry
+            s.update_databases_on_startup = self._update_databases_on_startup
+
             s.save()
             logger.info("Settings saved successfully")
         except Exception as e:
@@ -350,6 +508,20 @@ class SettingsBridge(QObject):
             self._todds_active_mods_target = True
             self._todds_dry_run = False
             self._todds_overwrite = False
+            self._community_rules_source = "None"
+            self._community_rules_repo = "https://github.com/RimSort/Community-Rules-Database"
+            self._community_rules_file_path = ""
+            self._steam_db_source = "None"
+            self._steam_db_repo = "https://github.com/RimSort/Steam-Workshop-Database"
+            self._steam_db_file_path = ""
+            self._no_version_warning_source = "None"
+            self._no_version_warning_repo = "https://github.com/emipa606/NoVersionWarning"
+            self._no_version_warning_file_path = ""
+            self._use_this_instead_source = "None"
+            self._use_this_instead_repo = "https://github.com/emipa606/UseThisInstead"
+            self._use_this_instead_file_path = ""
+            self._database_expiry = 0
+            self._update_databases_on_startup = True
             self.settingsChanged.emit()
             logger.info("Settings reset to defaults")
         except Exception as e:
